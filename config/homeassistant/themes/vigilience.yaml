@@ -1,0 +1,94 @@
+# Vigilience theme: dark control-center palette. Status colours are always
+# paired with text/icons in the dashboard, never used as the only signal.
+Vigilience:
+  # Typography: system UI stack (SF Pro on iPhone/Mac).
+  ha-font-family-body: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, sans-serif'
+  ha-font-family-heading: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Inter, Roboto, sans-serif'
+  primary-font-family: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, sans-serif'
+  paper-font-common-base_-_font-family: "var(--primary-font-family)"
+
+  # Shape
+  ha-card-border-radius: "14px"
+  ha-card-border-width: "1px"
+  ha-card-box-shadow: "none"
+  ha-dialog-border-radius: "16px"
+  ha-badge-border-radius: "10px"
+
+  modes:
+    dark:
+      # Surfaces
+      primary-background-color: "#0b0f14"
+      lovelace-background: "#0b0f14"
+      secondary-background-color: "#121821"
+      card-background-color: "#121821"
+      ha-card-background: "#121821"
+      ha-card-border-color: "#222c38"
+      divider-color: "#222c38"
+      clear-background-color: "#0b0f14"
+      code-editor-background-color: "#0f141b"
+      mdc-theme-surface: "#121821"
+      ha-dialog-surface-background: "#121821"
+      input-fill-color: "#18202b"
+
+      # Text
+      primary-text-color: "#e6edf3"
+      secondary-text-color: "#8b98a9"
+      disabled-text-color: "#566273"
+      text-primary-color: "#0b0f14"
+
+      # Accent (teal) for interactive elements
+      primary-color: "#4fd1c5"
+      rgb-primary-color: "79, 209, 197"
+      accent-color: "#4fd1c5"
+      rgb-accent-color: "79, 209, 197"
+      light-primary-color: "#2c7a73"
+      dark-primary-color: "#38b2a7"
+
+      # Status palette
+      success-color: "#3fb950"
+      warning-color: "#d29922"
+      error-color: "#f85149"
+      info-color: "#58a6ff"
+      state-icon-color: "#8b98a9"
+      state-on-color: "#4fd1c5"
+      state-active-color: "#4fd1c5"
+      state-binary_sensor-connectivity-on-color: "#3fb950"
+      state-binary_sensor-connectivity-off-color: "#f85149"
+      state-binary_sensor-running-on-color: "#3fb950"
+      state-binary_sensor-running-off-color: "#f85149"
+      state-binary_sensor-problem-on-color: "#d29922"
+      state-binary_sensor-problem-off-color: "#3fb950"
+      state-binary_sensor-heat-on-color: "#f85149"
+      state-binary_sensor-heat-off-color: "#3fb950"
+
+      # Chrome
+      app-header-background-color: "#0b0f14"
+      app-header-text-color: "#e6edf3"
+      app-header-border-bottom: "1px solid #18202b"
+      sidebar-background-color: "#0d1218"
+      sidebar-text-color: "#aab6c5"
+      sidebar-icon-color: "#6f7d8f"
+      sidebar-selected-text-color: "#4fd1c5"
+      sidebar-selected-icon-color: "#4fd1c5"
+      sidebar-menu-button-background-color: "#0d1218"
+
+      # Charts and gauges
+      history-unknown-color: "#2a3441"
+      graph-color-1: "#4fd1c5"
+      graph-color-2: "#58a6ff"
+      graph-color-3: "#d29922"
+      graph-color-4: "#bc8cff"
+      graph-color-5: "#f85149"
+      energy-grid-consumption-color: "#58a6ff"
+      gauge-color: "#4fd1c5"
+
+      # Tables, chips, switches
+      table-row-background-color: "#121821"
+      table-row-alternative-background-color: "#0f141b"
+      ha-assist-chip-filled-container-color: "#18202b"
+      switch-checked-color: "#4fd1c5"
+      switch-checked-button-color: "#4fd1c5"
+      switch-checked-track-color: "#2c7a73"
+      switch-unchecked-button-color: "#8b98a9"
+      switch-unchecked-track-color: "#2a3441"
+      markdown-code-background-color: "#18202b"

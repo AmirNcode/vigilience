@@ -1,0 +1,253 @@
+# Vigilience - overall health, alert thresholds and alert automations.
+#
+# Alerts are de-duplicated: each condition owns one persistent notification
+# id (re-raising replaces it) and every automation requires the condition to
+# hold for a minimum duration before firing. Recovery dismisses the
+# notification and writes a "recovered" entry to the activity log.
+
+input_number:
+  vig_temp_threshold:
+    name: CPU temperature alert threshold
+    min: 60
+    max: 100
+    step: 1
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer-alert
+    mode: box
+  vig_disk_free_threshold:
+    name: Disk free-space alert threshold
+    min: 5
+    max: 50
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:harddisk-remove
+    mode: box
+
+template:
+  - binary_sensor:
+      - name: Vig SSD Low Space
+        unique_id: vig_ssd_low_space
+        device_class: problem
+        state: >
+          {{ (100 - states('sensor.vig_ssd_usage') | float(0))
+             < states('input_number.vig_disk_free_threshold') | float(15) }}
+        availability: "{{ has_value('sensor.vig_ssd_usage') }}"
+      - name: Vig Media Low Space
+        unique_id: vig_media_low_space
+        device_class: problem
+        state: >
+          {{ (100 - states('sensor.vig_media_usage') | float(0))
+             < states('input_number.vig_disk_free_threshold') | float(15) }}
+        availability: "{{ has_value('sensor.vig_media_usage') }}"
+      - name: Vig CPU Hot
+        unique_id: vig_cpu_hot
+        device_class: heat
+        state: >
+          {{ states('sensor.vig_cpu_temperature') | float(0)
+             >= states('input_number.vig_temp_threshold') | float(85) }}
+        availability: "{{ has_value('sensor.vig_cpu_temperature') }}"
+
+  - sensor:
+      - name: Vig Containers Running
+        unique_id: vig_containers_running
+        state: "{{ states('sensor.vig_containers') }}"
+        availability: "{{ has_value('sensor.vig_containers') }}"
+        state_class: measurement
+        icon: mdi:docker
+
+      # Headline state derived from the issue list below.
+      - name: Vig Health
+        unique_id: vig_health
+        icon: >
+          {% set s = states('sensor.vig_health') %}
+          {{ {'Healthy': 'mdi:shield-check', 'Attention': 'mdi:shield-alert',
+              'Critical': 'mdi:shield-off'}.get(s, 'mdi:shield-outline') }}
+        state: >
+          {% set crit = state_attr('sensor.vig_issues', 'critical') or [] %}
+          {% set warn = state_attr('sensor.vig_issues', 'warnings') or [] %}
+          {{ 'Critical' if crit | count > 0 else 'Attention' if warn | count > 0 else 'Healthy' }}
+        availability: "{{ state_attr('sensor.vig_issues', 'critical') is list }}"
+
+      # Current problems, used by the Overview "Needs attention" card.
+      - name: Vig Issues
+        unique_id: vig_issues
+        icon: mdi:alert-circle-outline
+        state: >
+          {{ (this.attributes.get('critical', []) | count)
+             + (this.attributes.get('warnings', []) | count)
+             if this.attributes is defined and this.attributes else 0 }}
+        attributes:
+          critical: >
+            {% set c = namespace(i=[]) %}
+            {% if is_state('binary_sensor.vig_internet', 'off') %}{% set c.i = c.i + ['Internet is unreachable'] %}{% endif %}
+            {% if is_state('binary_sensor.vig_gateway', 'off') %}{% set c.i = c.i + ['Home gateway is not responding'] %}{% endif %}
+            {% if is_state('binary_sensor.vig_immich', 'off') %}{% set c.i = c.i + ['Immich is down'] %}{% endif %}
+            {% if is_state('binary_sensor.vig_plex', 'off') %}{% set c.i = c.i + ['Plex is down'] %}{% endif %}
+            {% if is_state('binary_sensor.vig_media_drive_mounted', 'off') %}{% set c.i = c.i + ['WD media drive is not mounted'] %}{% endif %}
+            {% if is_state('binary_sensor.vig_metrics_collector', 'off') %}{% set c.i = c.i + ['Server metrics are not being collected'] %}{% endif %}
+            {{ c.i }}
+          warnings: >
+            {% set w = namespace(i=[]) %}
+            {% if is_state('binary_sensor.vig_ssd_low_space', 'on') %}{% set w.i = w.i + ['Internal SSD is low on free space'] %}{% endif %}
+            {% if is_state('binary_sensor.vig_media_low_space', 'on') %}{% set w.i = w.i + ['WD media drive is low on free space'] %}{% endif %}
+            {% if is_state('binary_sensor.vig_cpu_hot', 'on') %}{% set w.i = w.i + ['CPU temperature is above threshold'] %}{% endif %}
+            {% if states('sensor.vig_memory_usage') | float(0) >= 90 %}{% set w.i = w.i + ['Memory usage is above 90%'] %}{% endif %}
+            {% if states('sensor.vig_internet_latency') | float(0) >= 150 %}{% set w.i = w.i + ['Internet latency is high'] %}{% endif %}
+            {{ w.i }}
+
+automation:
+  - id: vig_apply_theme
+    alias: "Vigilience: apply theme on start"
+    mode: single
+    triggers:
+      - trigger: homeassistant
+        event: start
+    actions:
+      - action: frontend.set_theme
+        data:
+          name: Vigilience
+          mode: dark
+      # Thresholds are editable in the UI and restored across restarts; seed
+      # defaults only while they still sit at their minimum (never set).
+      - if: "{{ states('input_number.vig_temp_threshold') | float(60) <= 60 }}"
+        then:
+          - action: input_number.set_value
+            target: {entity_id: input_number.vig_temp_threshold}
+            data: {value: 85}
+      - if: "{{ states('input_number.vig_disk_free_threshold') | float(5) <= 5 }}"
+        then:
+          - action: input_number.set_value
+            target: {entity_id: input_number.vig_disk_free_threshold}
+            data: {value: 15}
+
+  - id: vig_alert_outage
+    alias: "Vigilience: service outage alert"
+    description: Raise one notification per service when it has been down for 2 minutes.
+    mode: parallel
+    triggers:
+      - trigger: state
+        entity_id:
+          - binary_sensor.vig_internet
+          - binary_sensor.vig_gateway
+          - binary_sensor.vig_immich
+          - binary_sensor.vig_plex
+          - binary_sensor.vig_metrics_collector
+          - binary_sensor.vig_media_drive_mounted
+        to: "off"
+        for: "00:02:00"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: "vig_{{ trigger.entity_id | replace('.', '_') }}"
+          title: "Vigilience · {{ trigger.to_state.name | replace('Vig ', '') }} down"
+          message: >
+            {{ trigger.to_state.name | replace('Vig ', '') }} has been down since
+            {{ as_local(trigger.to_state.last_changed).strftime('%H:%M') }}.
+      - action: logbook.log
+        data:
+          name: Vigilience
+          message: "alert: {{ trigger.to_state.name | replace('Vig ', '') }} down for 2+ minutes"
+          entity_id: "{{ trigger.entity_id }}"
+
+  # Services already down when Home Assistant starts never "change" to off,
+  # so sweep once a few minutes after startup.
+  - id: vig_alert_outage_at_start
+    alias: "Vigilience: outage sweep after start"
+    mode: single
+    triggers:
+      - trigger: homeassistant
+        event: start
+    actions:
+      - delay: "00:03:00"
+      - repeat:
+          for_each: >
+            {{ ['binary_sensor.vig_internet', 'binary_sensor.vig_gateway',
+                'binary_sensor.vig_immich', 'binary_sensor.vig_plex',
+                'binary_sensor.vig_metrics_collector',
+                'binary_sensor.vig_media_drive_mounted']
+               | select('is_state', 'off') | list }}
+          sequence:
+            - action: persistent_notification.create
+              data:
+                notification_id: "vig_{{ repeat.item | replace('.', '_') }}"
+                title: "Vigilience · {{ state_attr(repeat.item, 'friendly_name') | replace('Vig ', '') }} down"
+                message: >
+                  {{ state_attr(repeat.item, 'friendly_name') | replace('Vig ', '') }}
+                  was down when monitoring started
+                  ({{ as_local(states[repeat.item].last_changed).strftime('%H:%M') }}).
+            - action: logbook.log
+              data:
+                name: Vigilience
+                message: "alert: {{ state_attr(repeat.item, 'friendly_name') | replace('Vig ', '') }} down at startup"
+                entity_id: "{{ repeat.item }}"
+
+  - id: vig_alert_recovered
+    alias: "Vigilience: service recovered"
+    mode: parallel
+    triggers:
+      - trigger: state
+        entity_id:
+          - binary_sensor.vig_internet
+          - binary_sensor.vig_gateway
+          - binary_sensor.vig_immich
+          - binary_sensor.vig_plex
+          - binary_sensor.vig_metrics_collector
+          - binary_sensor.vig_media_drive_mounted
+        from: "off"
+        to: "on"
+    actions:
+      - action: persistent_notification.dismiss
+        data:
+          notification_id: "vig_{{ trigger.entity_id | replace('.', '_') }}"
+      - action: logbook.log
+        data:
+          name: Vigilience
+          message: >
+            recovered: {{ trigger.to_state.name | replace('Vig ', '') }} back after
+            {{ ((as_timestamp(trigger.to_state.last_changed)
+                 - as_timestamp(trigger.from_state.last_changed)) / 60) | round(1) }} min
+          entity_id: "{{ trigger.entity_id }}"
+
+  - id: vig_alert_problem
+    alias: "Vigilience: threshold alert"
+    description: Disk space and temperature thresholds.
+    mode: parallel
+    triggers:
+      - trigger: state
+        entity_id:
+          - binary_sensor.vig_ssd_low_space
+          - binary_sensor.vig_media_low_space
+          - binary_sensor.vig_cpu_hot
+        to: "on"
+        for: "00:05:00"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: "vig_{{ trigger.entity_id | replace('.', '_') }}"
+          title: "Vigilience · {{ trigger.to_state.name | replace('Vig ', '') }}"
+          message: >
+            {% if 'ssd' in trigger.entity_id %}Internal SSD: {{ states('sensor.vig_ssd_free') }} GiB free.
+            {% elif 'media' in trigger.entity_id %}WD media drive: {{ states('sensor.vig_media_free') }} TiB free.
+            {% else %}CPU at {{ states('sensor.vig_cpu_temperature') }} °C
+            (threshold {{ states('input_number.vig_temp_threshold') | int }} °C).{% endif %}
+      - action: logbook.log
+        data:
+          name: Vigilience
+          message: "alert: {{ trigger.to_state.name | replace('Vig ', '') }}"
+          entity_id: "{{ trigger.entity_id }}"
+
+  - id: vig_alert_problem_cleared
+    alias: "Vigilience: threshold cleared"
+    mode: parallel
+    triggers:
+      - trigger: state
+        entity_id:
+          - binary_sensor.vig_ssd_low_space
+          - binary_sensor.vig_media_low_space
+          - binary_sensor.vig_cpu_hot
+        from: "on"
+        to: "off"
+    actions:
+      - action: persistent_notification.dismiss
+        data:
+          notification_id: "vig_{{ trigger.entity_id | replace('.', '_') }}"

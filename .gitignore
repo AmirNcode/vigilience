@@ -1,0 +1,35 @@
+# Secrets and private runtime config - never commit
+.env
+*.env
+!.env.example
+production.env
+secrets.yaml
+*.pem
+*.key
+
+# Home Assistant runtime state (lives in the server's Docker volume)
+.storage/
+home-assistant_v2.db*
+home-assistant.log*
+.HA_VERSION
+.cloud/
+deps/
+tts/
+backups/
+*.tar.gz
+
+# Private planning material (contains network inventory)
+homelab_dashboard_agent_handoff.md
+*handoff*.md
+private/
+
+# Screenshots may contain private details; add sanitized ones explicitly
+*.png
+*.jpg
+!docs/img/*.png
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp

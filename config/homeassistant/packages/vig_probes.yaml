@@ -1,0 +1,150 @@
+# Vigilience - reachability probes (internet, gateway, Immich, Plex).
+#
+# Each probe runs probe.sh inside the Home Assistant container. Hosts and URLs
+# that are private to the home network come from environment variables set
+# in the server-only production.env, never from this public file.
+# Immich and Plex are probed on the loopback interface because Home Assistant
+# uses host networking on the same server.
+
+command_line:
+  - sensor:
+      name: Vig Internet Probe 1
+      unique_id: vig_internet_probe_1
+      command: 'sh /config/vigilience/scripts/probe.sh ping "$VIG_INTERNET_HOST_1"'
+      scan_interval: 60
+      command_timeout: 15
+      value_template: "{{ 'up' if value_json.up else 'down' }}"
+      json_attributes: [ms, loss]
+  - sensor:
+      name: Vig Internet Probe 2
+      unique_id: vig_internet_probe_2
+      command: 'sh /config/vigilience/scripts/probe.sh ping "$VIG_INTERNET_HOST_2"'
+      scan_interval: 60
+      command_timeout: 15
+      value_template: "{{ 'up' if value_json.up else 'down' }}"
+      json_attributes: [ms, loss]
+  - sensor:
+      name: Vig Gateway Probe
+      unique_id: vig_gateway_probe
+      command: 'sh /config/vigilience/scripts/probe.sh ping "$VIG_GATEWAY_HOST"'
+      scan_interval: 60
+      command_timeout: 15
+      value_template: "{{ 'up' if value_json.up else 'down' }}"
+      json_attributes: [ms, loss, error]
+  - sensor:
+      name: Vig Immich Probe
+      unique_id: vig_immich_probe
+      command: "sh /config/vigilience/scripts/probe.sh http http://127.0.0.1:2283/api/server/ping"
+      scan_interval: 60
+      command_timeout: 15
+      value_template: "{{ 'up' if value_json.up else 'down' }}"
+      json_attributes: [ms, code]
+  # /identity is Plex's unauthenticated liveness endpoint; no token needed.
+  - sensor:
+      name: Vig Plex Probe
+      unique_id: vig_plex_probe
+      command: "sh /config/vigilience/scripts/probe.sh http http://127.0.0.1:32400/identity"
+      scan_interval: 60
+      command_timeout: 15
+      value_template: "{{ 'up' if value_json.up else 'down' }}"
+      json_attributes: [ms, code]
+  - sensor:
+      name: Vig Quick Links
+      unique_id: vig_quick_links
+      command: "sh /config/vigilience/scripts/probe.sh links"
+      scan_interval: 3600
+      value_template: "{{ 'ok' if value_json.ok else 'error' }}"
+      json_attributes: [immich, plex, router, vpn]
+
+template:
+  - binary_sensor:
+      - name: Vig Internet
+        unique_id: vig_internet
+        device_class: connectivity
+        # Online when either independent external host answers.
+        state: >
+          {{ is_state('sensor.vig_internet_probe_1', 'up')
+             or is_state('sensor.vig_internet_probe_2', 'up') }}
+        availability: >
+          {{ states('sensor.vig_internet_probe_1') in ['up', 'down']
+             or states('sensor.vig_internet_probe_2') in ['up', 'down'] }}
+      - name: Vig Gateway
+        unique_id: vig_gateway
+        device_class: connectivity
+        state: "{{ is_state('sensor.vig_gateway_probe', 'up') }}"
+        availability: >
+          {{ states('sensor.vig_gateway_probe') in ['up', 'down']
+             and state_attr('sensor.vig_gateway_probe', 'error') is none }}
+        icon: mdi:router-network
+      - name: Vig Immich
+        unique_id: vig_immich
+        device_class: running
+        state: "{{ is_state('sensor.vig_immich_probe', 'up') }}"
+        availability: "{{ states('sensor.vig_immich_probe') in ['up', 'down'] }}"
+        icon: mdi:image-multiple
+      - name: Vig Plex
+        unique_id: vig_plex
+        device_class: running
+        state: "{{ is_state('sensor.vig_plex_probe', 'up') }}"
+        availability: "{{ states('sensor.vig_plex_probe') in ['up', 'down'] }}"
+        icon: mdi:plex
+
+  # Latency/response time: unknown (not zero) while the target is down.
+  - sensor:
+      - name: Vig Internet Latency 1
+        unique_id: vig_internet_latency_1
+        unit_of_measurement: ms
+        device_class: duration
+        state_class: measurement
+        state: >
+          {% set v = state_attr('sensor.vig_internet_probe_1', 'ms') %}
+          {{ v | float | round(1) if is_state('sensor.vig_internet_probe_1', 'up') and v is number else none }}
+        icon: mdi:timer-outline
+      - name: Vig Internet Latency 2
+        unique_id: vig_internet_latency_2
+        unit_of_measurement: ms
+        device_class: duration
+        state_class: measurement
+        state: >
+          {% set v = state_attr('sensor.vig_internet_probe_2', 'ms') %}
+          {{ v | float | round(1) if is_state('sensor.vig_internet_probe_2', 'up') and v is number else none }}
+        icon: mdi:timer-outline
+      - name: Vig Gateway Latency
+        unique_id: vig_gateway_latency
+        unit_of_measurement: ms
+        device_class: duration
+        state_class: measurement
+        state: >
+          {% set v = state_attr('sensor.vig_gateway_probe', 'ms') %}
+          {{ v | float | round(1) if is_state('sensor.vig_gateway_probe', 'up') and v is number else none }}
+        icon: mdi:router-network
+      - name: Vig Immich Response
+        unique_id: vig_immich_response
+        unit_of_measurement: ms
+        device_class: duration
+        state_class: measurement
+        state: >
+          {% set v = state_attr('sensor.vig_immich_probe', 'ms') %}
+          {{ v | float | round(1) if is_state('sensor.vig_immich_probe', 'up') and v is number else none }}
+        icon: mdi:timer-outline
+      - name: Vig Plex Response
+        unique_id: vig_plex_response
+        unit_of_measurement: ms
+        device_class: duration
+        state_class: measurement
+        state: >
+          {% set v = state_attr('sensor.vig_plex_probe', 'ms') %}
+          {{ v | float | round(1) if is_state('sensor.vig_plex_probe', 'up') and v is number else none }}
+        icon: mdi:timer-outline
+      - name: Vig Internet Latency
+        unique_id: vig_internet_latency
+        unit_of_measurement: ms
+        device_class: duration
+        state_class: measurement
+        # Best (lowest) of the two external probes that answered.
+        state: >
+          {% set v = [states('sensor.vig_internet_latency_1'),
+                      states('sensor.vig_internet_latency_2')]
+                     | select('is_number') | map('float') | list %}
+          {{ (v | min) | round(1) if v else none }}
+        icon: mdi:timer-outline

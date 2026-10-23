@@ -1,0 +1,719 @@
+# Vigilience dashboard (YAML mode, managed in Git).
+# Views: Overview · Server · Network · Smart Home · Cameras · Security · Activity
+#
+# Truthfulness rule: every number shown comes from a live sensor. Anything not
+# yet integrated is labelled "Not configured" or "Not available".
+
+title: Vigilience
+views:
+  # ───────────────────────────── OVERVIEW ─────────────────────────────
+  - title: Overview
+    path: overview
+    icon: mdi:view-dashboard-outline
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    header:
+      layout: responsive
+      badges_position: bottom
+      card:
+        type: markdown
+        text_only: true
+        content: |
+          {% set h = states('sensor.vig_health') %}
+          {% set icon = {'Healthy':'mdi:shield-check','Attention':'mdi:shield-alert','Critical':'mdi:shield-off'}.get(h,'mdi:shield-outline') %}
+          # Vigilience
+
+          <ha-icon icon="{{ icon }}"></ha-icon> **{{ h if h not in ['unknown','unavailable'] else 'Starting…' }}** · {{ now().strftime('%a %b %-d, %H:%M') }} · metrics updated {{ relative_time(states.sensor.vig_cpu_usage.last_updated) if states.sensor.vig_cpu_usage else 'n/a' }} ago
+    badges:
+      - type: entity
+        entity: binary_sensor.vig_internet
+        name: Internet
+        show_name: true
+        show_state: true
+        color: state
+        tap_action: {action: navigate, navigation_path: network}
+      - type: entity
+        entity: binary_sensor.vig_metrics_collector
+        name: HP server
+        show_name: true
+        show_state: true
+        color: state
+        tap_action: {action: navigate, navigation_path: server}
+      - type: entity
+        entity: binary_sensor.vig_immich
+        name: Immich
+        show_name: true
+        show_state: true
+        color: state
+      - type: entity
+        entity: binary_sensor.vig_plex
+        name: Plex
+        show_name: true
+        show_state: true
+        color: state
+      - type: entity
+        entity: binary_sensor.vig_media_drive_mounted
+        name: WD drive
+        show_name: true
+        show_state: true
+        color: state
+        tap_action: {action: navigate, navigation_path: server}
+      - type: entity
+        entity: sensor.vig_config_backup
+        name: Backups
+        icon: mdi:backup-restore
+        show_name: true
+        show_state: true
+        tap_action: {action: navigate, navigation_path: security}
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Needs attention
+            icon: mdi:alert-circle-outline
+          - type: markdown
+            content: |
+              {% set crit = state_attr('sensor.vig_issues','critical') or [] %}
+              {% set warn = state_attr('sensor.vig_issues','warnings') or [] %}
+              {% for i in crit %}<ha-alert alert-type="error">{{ i }}</ha-alert>{% endfor %}{% for i in warn %}<ha-alert alert-type="warning">{{ i }}</ha-alert>{% endfor %}{% if not crit and not warn %}<ha-alert alert-type="success">All monitored systems are normal.</ha-alert>{% endif %}<ha-alert alert-type="warning" title="Media is not backed up">Immich originals and Plex media live on a single 4 TB USB drive with no second copy.</ha-alert>
+          - type: heading
+            heading: Quick actions
+            icon: mdi:lightning-bolt-outline
+            heading_style: subtitle
+          - type: markdown
+            content: |
+              {% set l = states.sensor.vig_quick_links.attributes if states.sensor.vig_quick_links else {} %}
+              {% if l.get('immich') %}<a href="{{ l.immich }}" target="_blank"><ha-icon icon="mdi:image-multiple"></ha-icon> Immich</a>{% endif %}{% if l.get('plex') %} &nbsp;·&nbsp; <a href="{{ l.plex }}" target="_blank"><ha-icon icon="mdi:plex"></ha-icon> Plex</a>{% endif %}{% if l.get('router') %} &nbsp;·&nbsp; <a href="{{ l.router }}" target="_blank"><ha-icon icon="mdi:router-wireless"></ha-icon> Router</a>{% endif %}{% if l.get('vpn') %} &nbsp;·&nbsp; <a href="{{ l.vpn }}" target="_blank"><ha-icon icon="mdi:vpn"></ha-icon> VPN</a>{% endif %}
+              {% if not l.get('immich') and not l.get('plex') %}Quick links not configured (set VIG_IMMICH_URL / VIG_PLEX_URL in production.env).{% endif %}
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Internet
+            icon: mdi:web
+            tap_action: {action: navigate, navigation_path: network}
+          - type: tile
+            entity: binary_sensor.vig_internet
+            name: Internet
+            state_content: [state, last_changed]
+          - type: tile
+            entity: sensor.vig_internet_latency
+            name: Latency
+          - type: tile
+            entity: sensor.vig_gateway_latency
+            name: Gateway
+          - type: tile
+            entity: sensor.vig_lan_download
+            name: HP Wi-Fi ↓
+          - type: history-graph
+            title: Latency · 24 h
+            hours_to_show: 24
+            grid_options: {columns: full}
+            entities:
+              - entity: sensor.vig_internet_latency
+                name: Internet
+              - entity: sensor.vig_gateway_latency
+                name: Gateway
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: HP server
+            icon: mdi:server
+            tap_action: {action: navigate, navigation_path: server}
+          - type: gauge
+            grid_options: {columns: 6, rows: 2}
+            entity: sensor.vig_cpu_usage
+            name: CPU
+            min: 0
+            max: 100
+            needle: false
+            severity: {green: 0, yellow: 70, red: 90}
+          - type: gauge
+            grid_options: {columns: 6, rows: 2}
+            entity: sensor.vig_memory_usage
+            name: RAM
+            min: 0
+            max: 100
+            severity: {green: 0, yellow: 80, red: 90}
+          - type: tile
+            entity: sensor.vig_cpu_temperature
+            name: CPU temp
+          - type: tile
+            entity: sensor.vig_load_5m
+            name: Load (5 min)
+          - type: history-graph
+            title: CPU & RAM · 24 h
+            hours_to_show: 24
+            grid_options: {columns: full}
+            entities:
+              - entity: sensor.vig_cpu_usage
+                name: CPU
+              - entity: sensor.vig_memory_usage
+                name: RAM
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Storage
+            icon: mdi:harddisk
+            tap_action: {action: navigate, navigation_path: server}
+          - type: gauge
+            grid_options: {columns: 6, rows: 2}
+            entity: sensor.vig_ssd_usage
+            name: Internal SSD
+            min: 0
+            max: 100
+            severity: {green: 0, yellow: 75, red: 85}
+          - type: conditional
+            grid_options: {columns: 6, rows: 2}
+            conditions:
+              - condition: state
+                entity: sensor.vig_media_usage
+                state_not: unavailable
+            card:
+              type: gauge
+              entity: sensor.vig_media_usage
+              name: WD Black 4 TB
+              min: 0
+              max: 100
+              severity: {green: 0, yellow: 75, red: 85}
+          - type: conditional
+            grid_options: {columns: 6, rows: 2}
+            conditions:
+              - condition: state
+                entity: sensor.vig_media_usage
+                state: unavailable
+            card:
+              type: tile
+              entity: binary_sensor.vig_media_drive_mounted
+              name: WD Black 4 TB
+              vertical: true
+          - type: tile
+            entity: sensor.vig_ssd_free
+            name: SSD free
+          - type: tile
+            entity: sensor.vig_media_free
+            name: WD free
+
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Recent activity
+            icon: mdi:timeline-clock-outline
+            tap_action: {action: navigate, navigation_path: activity}
+          - type: logbook
+            hours_to_show: 24
+            grid_options: {columns: full}
+            target:
+              entity_id:
+                - binary_sensor.vig_internet
+                - binary_sensor.vig_gateway
+                - binary_sensor.vig_immich
+                - binary_sensor.vig_plex
+                - binary_sensor.vig_media_drive_mounted
+                - binary_sensor.vig_metrics_collector
+                - binary_sensor.vig_ssd_low_space
+                - binary_sensor.vig_media_low_space
+                - binary_sensor.vig_cpu_hot
+
+  # ───────────────────────────── SERVER ─────────────────────────────
+  - title: Server
+    path: server
+    icon: mdi:server
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    badges:
+      - type: entity
+        entity: sensor.vig_server_uptime
+        name: Uptime
+        show_name: true
+        show_state: true
+      - type: entity
+        entity: sensor.vig_server_os
+        name: OS
+        show_name: true
+        show_state: true
+      - type: entity
+        entity: sensor.vig_containers_running
+        name: Containers
+        show_name: true
+        show_state: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Processor
+            icon: mdi:cpu-64-bit
+          - type: tile
+            entity: sensor.vig_cpu_usage
+            name: Usage
+          - type: tile
+            entity: sensor.vig_cpu_temperature
+            name: Package temp
+          - type: tile
+            entity: sensor.vig_cpu_frequency
+            name: Frequency
+          - type: tile
+            entity: sensor.vig_load_5m
+            name: Load (5 min)
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              Load average {{ states('sensor.vig_load_1m') }} · {{ states('sensor.vig_load_5m') }} · {{ states('sensor.vig_load_15m') }}
+              on 4 threads (2 cores). {{ state_attr('sensor.vig_cpu_usage','cpu_name') or '' }}
+          - type: statistics-graph
+            title: CPU usage & temperature · 7 days
+            days_to_show: 7
+            period: hour
+            stat_types: [mean, max]
+            chart_type: line
+            grid_options: {columns: full}
+            entities:
+              - entity: sensor.vig_cpu_usage
+                name: CPU %
+              - entity: sensor.vig_cpu_temperature
+                name: Temp °C
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Memory
+            icon: mdi:memory
+          - type: tile
+            entity: sensor.vig_memory_used
+            name: Used
+          - type: tile
+            entity: sensor.vig_memory_available
+            name: Available
+          - type: tile
+            entity: sensor.vig_memory_cached
+            name: Cache & buffers
+          - type: tile
+            entity: sensor.vig_swap_usage
+            name: Swap
+          - type: statistics-graph
+            title: Memory · 7 days
+            days_to_show: 7
+            period: hour
+            stat_types: [mean, max]
+            chart_type: line
+            grid_options: {columns: full}
+            entities:
+              - entity: sensor.vig_memory_usage
+                name: RAM %
+              - entity: sensor.vig_swap_usage
+                name: Swap %
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Storage
+            icon: mdi:harddisk
+          - type: tile
+            entity: sensor.vig_ssd_usage
+            name: Internal SSD used
+          - type: tile
+            entity: sensor.vig_ssd_temperature
+            name: SSD temp
+          - type: tile
+            entity: sensor.vig_media_usage
+            name: WD Black used
+          - type: tile
+            entity: binary_sensor.vig_media_drive_mounted
+            name: WD mount
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              **Internal NVMe SSD (ext4)** — {{ states('sensor.vig_ssd_free') }} GiB free of {{ states('sensor.vig_ssd_size') }} GiB
+              <br>**WD Black 4 TB (USB, {{ states('sensor.vig_media_filesystem') }})** — {{ states('sensor.vig_media_free') }} TiB free of {{ states('sensor.vig_media_size') }} TiB
+              <br><small>Drive SMART health over USB: Not configured.</small>
+          - type: statistics-graph
+            title: Disk usage · 30 days
+            days_to_show: 30
+            period: day
+            stat_types: [max]
+            chart_type: line
+            grid_options: {columns: full}
+            entities:
+              - entity: sensor.vig_ssd_usage
+                name: SSD %
+              - entity: sensor.vig_media_usage
+                name: WD %
+
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Docker containers
+            icon: mdi:docker
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              {% set items = state_attr('sensor.vig_containers','items') or [] %}
+              {% if items %}
+              | | Container | Uptime | CPU | RAM |
+              |:-:|:--|:--|--:|--:|
+              {% for c in items -%}
+              | {{ '🟢' if c.status in ['running','healthy'] else ('🟡' if c.status in ['starting','restarting','paused'] else '🔴') }} | **{{ c.name }}**<br><small>{{ c.status }} · {{ c.image }}</small> | {{ c.uptime or '—' }} | {{ c.cpu }}% | {{ c.mem }} MiB |
+              {% endfor %}
+              <small>{{ states('sensor.vig_containers') }} of {{ state_attr('sensor.vig_containers','total') }} running · read-only view via socket proxy</small>
+              {% else %}
+              Container data not available (Glances or socket proxy not responding).
+              {% endif %}
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Services
+            icon: mdi:application-cog-outline
+          - type: tile
+            entity: binary_sensor.vig_immich
+            name: Immich
+            state_content: [state, last_changed]
+          - type: tile
+            entity: sensor.vig_immich_response
+            name: Immich response
+          - type: tile
+            entity: binary_sensor.vig_plex
+            name: Plex (native)
+            state_content: [state, last_changed]
+          - type: tile
+            entity: sensor.vig_plex_response
+            name: Plex response
+          - type: tile
+            entity: binary_sensor.vig_metrics_collector
+            name: Metrics collector
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              **Power** — Not configured (no wall-power meter; component watts not exposed by this hardware).
+              <br>**Intel GPU** — Not available (no supported exporter).
+              <br>**Battery** — {{ states('sensor.vig_battery') ~ ' %' if has_value('sensor.vig_battery') else 'Not reported by the OS' }}
+
+  # ───────────────────────────── NETWORK ─────────────────────────────
+  - title: Network
+    path: network
+    icon: mdi:lan
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Connectivity
+            icon: mdi:web
+          - type: tile
+            entity: binary_sensor.vig_internet
+            name: Internet
+            state_content: [state, last_changed]
+          - type: tile
+            entity: binary_sensor.vig_gateway
+            name: Home gateway
+            state_content: [state, last_changed]
+          - type: tile
+            entity: sensor.vig_internet_latency_1
+            name: External host A
+          - type: tile
+            entity: sensor.vig_internet_latency_2
+            name: External host B
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              {% set gw = states('binary_sensor.vig_gateway') %}{% set inet = states('binary_sensor.vig_internet') %}
+              {% if inet == 'on' %}<ha-alert alert-type="success">Internet reachable.</ha-alert>
+              {% elif gw == 'on' %}<ha-alert alert-type="error">Gateway answers but the internet does not — likely an ISP/upstream outage.</ha-alert>
+              {% elif gw == 'off' %}<ha-alert alert-type="error">Gateway not responding — local network or server Wi-Fi problem.</ha-alert>
+              {% else %}<ha-alert alert-type="info">Waiting for first probe results.</ha-alert>{% endif %}
+              <small>Packet loss (last probe): A {{ state_attr('sensor.vig_internet_probe_1','loss') }}% · B {{ state_attr('sensor.vig_internet_probe_2','loss') }}% · gateway {{ state_attr('sensor.vig_gateway_probe','loss') }}%</small>
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Latency history
+            icon: mdi:chart-timeline-variant
+          - type: statistics-graph
+            title: Latency · 7 days (hourly)
+            days_to_show: 7
+            period: hour
+            stat_types: [mean, max]
+            chart_type: line
+            grid_options: {columns: full}
+            entities:
+              - entity: sensor.vig_internet_latency
+                name: Internet
+              - entity: sensor.vig_gateway_latency
+                name: Gateway
+          - type: history-graph
+            title: Uptime · 7 days
+            hours_to_show: 168
+            grid_options: {columns: full}
+            entities:
+              - entity: binary_sensor.vig_internet
+                name: Internet
+              - entity: binary_sensor.vig_gateway
+                name: Gateway
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: HP device traffic
+            icon: mdi:wifi
+          - type: tile
+            entity: sensor.vig_lan_download
+            name: Download
+          - type: tile
+            entity: sensor.vig_lan_upload
+            name: Upload
+          - type: history-graph
+            title: HP Wi-Fi throughput · 24 h
+            hours_to_show: 24
+            grid_options: {columns: full}
+            entities:
+              - entity: sensor.vig_lan_download
+                name: Download
+              - entity: sensor.vig_lan_upload
+                name: Upload
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              <small>Traffic of the HP server's own interface ({{ states('sensor.vig_lan_interface') }}) only — not total household traffic.</small>
+
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Not yet configured
+            icon: mdi:progress-wrench
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              | Capability | Status |
+              |:--|:--|
+              | Internet speed test history | **Not configured** — Phase 2 (scheduled ≤ 2×/day; results limited by HP Wi-Fi) |
+              | LAN device inventory & new-device alerts | **Not configured** — Phase 2, needs your approval for NetAlertX (raw-socket ARP scan of the home subnet) |
+              | Per-device bandwidth / household traffic | **Not available** — gateway does not export flows |
+              | Router statistics | **Not available** — gateway API not verified |
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Topology (inferred)
+            icon: mdi:sitemap-outline
+          - type: markdown
+            content: |
+              <small>Inferred from setup notes, not detected.</small>
+
+              ```
+              ISP fibre
+               └─ ISP gateway (router + Wi-Fi)
+                   ├─ VPN appliance
+                   ├─ Switch → NVR, phone
+                   └─ Wired AP (upstairs)
+                        ├─ HP server (Wi-Fi)
+                        └─ Laptops / phones
+              ```
+
+  # ───────────────────────────── SMART HOME ─────────────────────────────
+  - title: Smart Home
+    path: smart-home
+    icon: mdi:home-automation
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        column_span: 3
+        cards:
+          - type: heading
+            heading: Devices
+            icon: mdi:home-automation
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              {% set domains = ['climate','light','switch','vacuum','media_player','fan'] %}
+              {% set ns = namespace(n=0) %}
+              {% for d in domains %}{% set ns.n = ns.n + (states[d] | rejectattr('entity_id','search','^switch\\.vig_') | list | count) %}{% endfor %}
+              {% if ns.n == 0 %}<ha-alert alert-type="info" title="No smart-home integrations connected yet">Add them in **Settings → Devices & services → Add integration**. Sign-in/MFA happens there; nothing is stored in Git.</ha-alert>
+              {% else %}
+              | Device | State | Updated |
+              |:--|:--|:--|
+              {% for d in domains %}{% for s in states[d] | sort(attribute='name') -%}
+              | {{ s.name }} | {{ s.state }} | {{ relative_time(s.last_updated) }} ago |
+              {% endfor %}{% endfor %}
+              {% endif %}
+      - type: grid
+        column_span: 3
+        cards:
+          - type: heading
+            heading: Integration status
+            icon: mdi:puzzle-outline
+            heading_style: subtitle
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              | Device | Planned integration | Status |
+              |:--|:--|:--|
+              | ecobee thermostat | ecobee (official) | {{ 'Connected' if states.climate | count > 0 else '**Not configured** — needs ecobee sign-in' }} |
+              | VeSync switch + 3 outlets | VeSync (official) | **Not configured** — needs VeSync sign-in, model check |
+              | Meross outdoor switch | to be evaluated | **Not configured** — model unknown |
+              | 2× Shark, 1× Roomba | SharkIQ / iRobot | **Not configured** — models unverified |
+              | 2× Fire TV, Apple TV | Android TV Remote / Apple TV | **Not configured** — pairing on-device |
+
+  # ───────────────────────────── CAMERAS ─────────────────────────────
+  - title: Cameras
+    path: cameras
+    icon: mdi:cctv
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        column_span: 3
+        cards:
+          - type: heading
+            heading: Cameras
+            icon: mdi:cctv
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              {% set cams = states.camera | list %}
+              {% if cams %}{% for c in cams %}**{{ c.name }}** — {{ c.state }}<br>{% endfor %}
+              {% else %}<ha-alert alert-type="info">No camera feeds are configured. Nothing on this page is a live view.</ha-alert>{% endif %}
+
+              | Camera | Status |
+              |:--|:--|
+              | 3× wired outdoor (NVR) | **Setup pending — NVR identification.** Check the label on the NVR or the phone app name; RTSP/ONVIF support decides the next step. |
+              | Tapo porch camera | **Not configured** — needs model; Tapo cameras offering a local RTSP "camera account" can be added via the official TP-Link Tapo integration. |
+              | 3× Blink | **Not configured** — Blink integration provides snapshots, motion and battery; no continuous live view. |
+
+  # ───────────────────────────── SECURITY ─────────────────────────────
+  - title: Security
+    path: security
+    icon: mdi:shield-lock-outline
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Access
+            icon: mdi:account-lock-outline
+          - type: markdown
+            content: |
+              <ha-alert alert-type="success">Dashboard requires a Home Assistant login.</ha-alert>
+              Reachable on the home LAN and the existing VPN only. No ports are forwarded to the internet by Vigilience.
+              Helper services (metrics, Docker proxy) listen on the server's loopback interface only.
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Backups
+            icon: mdi:backup-restore
+          - type: tile
+            entity: sensor.vig_config_backup
+            name: Vigilience config backup
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              <ha-alert alert-type="error" title="Media has no backup">~2 TB of Immich originals and Plex media exist only on the WD USB drive. A drive failure loses them.</ha-alert>
+              <small>Config backup file: {{ state_attr('sensor.vig_config_backup','file') or 'none yet — run scripts/backup-config.sh' }}</small>
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Software inventory
+            icon: mdi:package-variant-closed
+          - type: markdown
+            content: |
+              {% set items = state_attr('sensor.vig_containers','items') or [] %}
+              | Component | Version |
+              |:--|:--|
+              | Host OS | {{ state_attr('sensor.vig_server_os','hr_name') or 'unknown' }} |
+              {% for i in items | map(attribute='image') | unique | sort if i -%}
+              | {{ i.split(':')[0].split('/')[-1] }} | `{{ i.split(':')[1] if ':' in i else 'untagged' }}` |
+              {% endfor %}
+              <small>Version list only; no CVE feed is configured.</small>
+
+      - type: grid
+        column_span: 3
+        cards:
+          - type: heading
+            heading: Visibility and blind spots
+            icon: mdi:eye-off-outline
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              | Capability | Status |
+              |:--|:--|
+              | New / unknown device detection | **Not configured** — needs NetAlertX (Phase 2, your approval) |
+              | Network-wide traffic / intrusion detection | **Unavailable** — gateway exports no flows; requires a flow-capable router, managed switch with SPAN, or a TAP |
+              | DNS query monitoring | **Not configured** — only if you opt in to a local DNS resolver |
+              | Port / service exposure review | **Not configured** — on request, low-impact, home subnet only |
+
+              A quiet page here does not mean the network is secure; it means these signals are not collected yet.
+
+  # ───────────────────────────── ACTIVITY ─────────────────────────────
+  - title: Activity
+    path: activity
+    icon: mdi:timeline-clock-outline
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Timeline · 72 h
+            icon: mdi:timeline-clock-outline
+          - type: logbook
+            hours_to_show: 72
+            grid_options: {columns: full, rows: 12}
+            target:
+              entity_id:
+                - binary_sensor.vig_internet
+                - binary_sensor.vig_gateway
+                - binary_sensor.vig_immich
+                - binary_sensor.vig_plex
+                - binary_sensor.vig_media_drive_mounted
+                - binary_sensor.vig_metrics_collector
+                - binary_sensor.vig_ssd_low_space
+                - binary_sensor.vig_media_low_space
+                - binary_sensor.vig_cpu_hot
+                - sensor.vig_health
+      - type: grid
+        cards:
+          - type: heading
+            heading: Availability · 7 days
+            icon: mdi:chart-gantt
+          - type: history-graph
+            hours_to_show: 168
+            grid_options: {columns: full}
+            entities:
+              - entity: binary_sensor.vig_internet
+                name: Internet
+              - entity: binary_sensor.vig_gateway
+                name: Gateway
+              - entity: binary_sensor.vig_immich
+                name: Immich
+              - entity: binary_sensor.vig_plex
+                name: Plex
+              - entity: binary_sensor.vig_media_drive_mounted
+                name: WD drive
+          - type: heading
+            heading: Alert thresholds
+            icon: mdi:tune-variant
+            heading_style: subtitle
+          - type: entities
+            entities:
+              - entity: input_number.vig_temp_threshold
+                name: CPU temperature
+              - entity: input_number.vig_disk_free_threshold
+                name: Minimum free disk
+          - type: markdown
+            content: |
+              <small>Alerts fire after 2 min (outages) or 5 min (thresholds), appear in the notification
+              bell, and clear automatically on recovery. Dismissing a notification acknowledges it.</small>

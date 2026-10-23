@@ -1,0 +1,316 @@
+# Vigilience - HP server metrics from the local Glances REST API (v4).
+#
+# Glances runs in the vigilience-glances container with host PID/network
+# namespaces and listens on 127.0.0.1 only. Every value here is measured;
+# when Glances is down the sensors become "unavailable" rather than stale.
+
+rest:
+  - resource: http://127.0.0.1:61208/api/4/quicklook
+    scan_interval: 30
+    timeout: 10
+    sensor:
+      - name: Vig CPU Usage
+        unique_id: vig_cpu_usage
+        value_template: "{{ value_json.cpu | round(1) }}"
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:cpu-64-bit
+        json_attributes: [cpu_name]
+      - name: Vig Memory Usage
+        unique_id: vig_memory_usage
+        value_template: "{{ value_json.mem | round(1) }}"
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:memory
+      - name: Vig Swap Usage
+        unique_id: vig_swap_usage
+        value_template: "{{ value_json.swap | round(1) }}"
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:swap-horizontal
+      - name: Vig CPU Frequency
+        unique_id: vig_cpu_frequency
+        availability: "{{ value_json.cpu_hz_current is number }}"
+        value_template: "{{ (value_json.cpu_hz_current / 1000000) | round(0) }}"
+        unit_of_measurement: MHz
+        device_class: frequency
+        state_class: measurement
+        icon: mdi:speedometer
+
+  - resource: http://127.0.0.1:61208/api/4/load
+    scan_interval: 60
+    timeout: 10
+    sensor:
+      - name: Vig Load 1m
+        unique_id: vig_load_1m
+        value_template: "{{ value_json.min1 | round(2) }}"
+        state_class: measurement
+        icon: mdi:chart-line
+      - name: Vig Load 5m
+        unique_id: vig_load_5m
+        value_template: "{{ value_json.min5 | round(2) }}"
+        state_class: measurement
+        icon: mdi:chart-line
+      - name: Vig Load 15m
+        unique_id: vig_load_15m
+        value_template: "{{ value_json.min15 | round(2) }}"
+        state_class: measurement
+        icon: mdi:chart-line
+
+  - resource: http://127.0.0.1:61208/api/4/mem
+    scan_interval: 60
+    timeout: 10
+    sensor:
+      - name: Vig Memory Used
+        unique_id: vig_memory_used
+        value_template: "{{ (value_json.used / 1073741824) | round(2) }}"
+        unit_of_measurement: GiB
+        device_class: data_size
+        state_class: measurement
+        icon: mdi:memory
+      - name: Vig Memory Available
+        unique_id: vig_memory_available
+        value_template: "{{ (value_json.available / 1073741824) | round(2) }}"
+        unit_of_measurement: GiB
+        device_class: data_size
+        state_class: measurement
+        icon: mdi:memory
+      - name: Vig Memory Cached
+        unique_id: vig_memory_cached
+        value_template: "{{ ((value_json.cached + value_json.buffers) / 1073741824) | round(2) }}"
+        unit_of_measurement: GiB
+        device_class: data_size
+        state_class: measurement
+        icon: mdi:memory
+      - name: Vig Memory Total
+        unique_id: vig_memory_total
+        value_template: "{{ (value_json.total / 1073741824) | round(1) }}"
+        unit_of_measurement: GiB
+        device_class: data_size
+        icon: mdi:memory
+
+  - resource: http://127.0.0.1:61208/api/4/fs
+    scan_interval: 120
+    timeout: 10
+    sensor:
+      # /mnt/ssd is an empty Docker volume on the internal NVMe SSD.
+      - name: Vig SSD Usage
+        availability: "{{ value_json | selectattr('mnt_point', 'eq', '/mnt/ssd') | list | count > 0 }}"
+        unique_id: vig_ssd_usage
+        value_template: >
+          {% set m = value_json | selectattr('mnt_point', 'eq', '/mnt/ssd') | list %}
+          {{ m[0].percent | round(1) if m else none }}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:harddisk
+      - name: Vig SSD Free
+        availability: "{{ value_json | selectattr('mnt_point', 'eq', '/mnt/ssd') | list | count > 0 }}"
+        unique_id: vig_ssd_free
+        value_template: >
+          {% set m = value_json | selectattr('mnt_point', 'eq', '/mnt/ssd') | list %}
+          {{ (m[0].free / 1073741824) | round(1) if m else none }}
+        unit_of_measurement: GiB
+        device_class: data_size
+        state_class: measurement
+        icon: mdi:harddisk
+      - name: Vig SSD Size
+        availability: "{{ value_json | selectattr('mnt_point', 'eq', '/mnt/ssd') | list | count > 0 }}"
+        unique_id: vig_ssd_size
+        value_template: >
+          {% set m = value_json | selectattr('mnt_point', 'eq', '/mnt/ssd') | list %}
+          {{ (m[0].size / 1073741824) | round(0) if m else none }}
+        unit_of_measurement: GiB
+        device_class: data_size
+        icon: mdi:harddisk
+      # /mnt/media is a read-only bind of the WD Black drive. If the drive is
+      # unmounted on the host the entry disappears from Glances' list.
+      - name: Vig Media Usage
+        availability: >
+          {{ value_json | selectattr('mnt_point', 'eq', '/mnt/media')
+             | rejectattr('fs_type', 'in', ['overlay', 'tmpfs']) | list | count > 0 }}
+        unique_id: vig_media_usage
+        value_template: >
+          {% set m = value_json | selectattr('mnt_point', 'eq', '/mnt/media')
+                     | rejectattr('fs_type', 'in', ['overlay', 'tmpfs']) | list %}
+          {{ m[0].percent | round(1) if m else none }}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:harddisk-plus
+      - name: Vig Media Free
+        availability: >
+          {{ value_json | selectattr('mnt_point', 'eq', '/mnt/media')
+             | rejectattr('fs_type', 'in', ['overlay', 'tmpfs']) | list | count > 0 }}
+        unique_id: vig_media_free
+        value_template: >
+          {% set m = value_json | selectattr('mnt_point', 'eq', '/mnt/media')
+                     | rejectattr('fs_type', 'in', ['overlay', 'tmpfs']) | list %}
+          {{ (m[0].free / 1099511627776) | round(2) if m else none }}
+        unit_of_measurement: TiB
+        device_class: data_size
+        state_class: measurement
+        icon: mdi:harddisk-plus
+      - name: Vig Media Size
+        availability: >
+          {{ value_json | selectattr('mnt_point', 'eq', '/mnt/media')
+             | rejectattr('fs_type', 'in', ['overlay', 'tmpfs']) | list | count > 0 }}
+        unique_id: vig_media_size
+        value_template: >
+          {% set m = value_json | selectattr('mnt_point', 'eq', '/mnt/media')
+                     | rejectattr('fs_type', 'in', ['overlay', 'tmpfs']) | list %}
+          {{ (m[0].size / 1099511627776) | round(2) if m else none }}
+        unit_of_measurement: TiB
+        device_class: data_size
+        icon: mdi:harddisk-plus
+      - name: Vig Media Filesystem
+        unique_id: vig_media_filesystem
+        value_template: >
+          {% set m = value_json | selectattr('mnt_point', 'eq', '/mnt/media')
+                     | rejectattr('fs_type', 'in', ['overlay', 'tmpfs']) | list %}
+          {{ m[0].fs_type if m else 'not mounted' }}
+        icon: mdi:file-tree
+
+  - resource: http://127.0.0.1:61208/api/4/sensors
+    scan_interval: 60
+    timeout: 10
+    sensor:
+      - name: Vig CPU Temperature
+        availability: >
+          {{ value_json | selectattr('label', 'eq', 'Package id 0') | list | count > 0
+             or value_json | selectattr('type', 'eq', 'temperature_core') | list | count > 0 }}
+        unique_id: vig_cpu_temperature
+        value_template: >
+          {% set s = value_json | selectattr('label', 'eq', 'Package id 0') | list %}
+          {% if not s %}{% set s = value_json | selectattr('type', 'eq', 'temperature_core') | list %}{% endif %}
+          {{ s[0].value | round(1) if s else none }}
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        icon: mdi:thermometer
+      - name: Vig SSD Temperature
+        availability: "{{ value_json | selectattr('label', 'search', '^Composite') | list | count > 0 }}"
+        unique_id: vig_ssd_temperature
+        value_template: >
+          {% set s = value_json | selectattr('label', 'search', '^Composite') | list %}
+          {{ s[0].value | round(1) if s else none }}
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        icon: mdi:thermometer
+      - name: Vig Battery
+        availability: "{{ value_json | selectattr('type', 'eq', 'battery') | list | count > 0 }}"
+        unique_id: vig_battery
+        value_template: >
+          {% set s = value_json | selectattr('type', 'eq', 'battery') | list %}
+          {{ s[0].value | round(0) if s else none }}
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+
+  - resource: http://127.0.0.1:61208/api/4/network
+    scan_interval: 30
+    timeout: 10
+    sensor:
+      # "HP device traffic": the server's own LAN interface, not household
+      # traffic. The busiest physical interface is chosen automatically.
+      - name: Vig LAN Download
+        unique_id: vig_lan_download
+        value_template: >
+          {% set i = value_json
+             | rejectattr('interface_name', 'search', '^(lo|docker|veth|br-|wg|nordlynx|tailscale|tun)')
+             | sort(attribute='bytes_all', reverse=true) | list %}
+          {{ (i[0].bytes_recv_rate_per_sec * 8 / 1000000) | round(2) if i else none }}
+        unit_of_measurement: Mbit/s
+        device_class: data_rate
+        state_class: measurement
+        icon: mdi:download-network
+      - name: Vig LAN Upload
+        unique_id: vig_lan_upload
+        value_template: >
+          {% set i = value_json
+             | rejectattr('interface_name', 'search', '^(lo|docker|veth|br-|wg|nordlynx|tailscale|tun)')
+             | sort(attribute='bytes_all', reverse=true) | list %}
+          {{ (i[0].bytes_sent_rate_per_sec * 8 / 1000000) | round(2) if i else none }}
+        unit_of_measurement: Mbit/s
+        device_class: data_rate
+        state_class: measurement
+        icon: mdi:upload-network
+      - name: Vig LAN Interface
+        unique_id: vig_lan_interface
+        value_template: >
+          {% set i = value_json
+             | rejectattr('interface_name', 'search', '^(lo|docker|veth|br-|wg|nordlynx|tailscale|tun)')
+             | sort(attribute='bytes_all', reverse=true) | list %}
+          {{ i[0].interface_name if i else none }}
+        icon: mdi:wifi
+
+  - resource: http://127.0.0.1:61208/api/4/uptime
+    scan_interval: 300
+    timeout: 10
+    sensor:
+      - name: Vig Server Uptime
+        unique_id: vig_server_uptime
+        # Glances returns a JSON string such as "8 days, 4:50:00".
+        value_template: "{{ value_json if value_json is string else value }}"
+        icon: mdi:clock-check-outline
+
+  - resource: http://127.0.0.1:61208/api/4/system
+    scan_interval: 3600
+    timeout: 10
+    sensor:
+      - name: Vig Server OS
+        unique_id: vig_server_os
+        value_template: "{{ value_json.linux_distro or value_json.os_name }}"
+        json_attributes: [hostname, os_version, hr_name]
+        icon: mdi:linux
+
+command_line:
+  # Docker containers via Glances (which talks to the GET-only socket proxy).
+  - sensor:
+      name: Vig Containers
+      unique_id: vig_containers
+      command: >-
+        curl -sf -m 8 http://127.0.0.1:61208/api/4/containers
+        | jq -c '{running: (map(select(.status == "running" or .status == "healthy")) | length),
+        total: length,
+        items: (sort_by(.name) | map({name, status, uptime,
+        image: ((.image // []) | if type == "array" then (.[0] // "") else . end | split(",")[0]),
+        cpu: ((.cpu.total // 0) * 10 | round / 10),
+        mem: (((.memory_usage // 0) / 1048576) | round)}))}'
+      scan_interval: 60
+      command_timeout: 15
+      value_template: "{{ value_json.running }}"
+      json_attributes: [total, items]
+      unit_of_measurement: running
+      icon: mdi:docker
+
+  # Last successful Vigilience config backup, written by backup-config.sh.
+  - sensor:
+      name: Vig Config Backup
+      unique_id: vig_config_backup
+      command: "cat /config/vigilience-state/last_backup.json 2>/dev/null || echo '{}'"
+      scan_interval: 900
+      availability: "{{ value_json.timestamp is defined }}"
+      value_template: "{{ value_json.timestamp }}"
+      json_attributes: [file, size_mb]
+      device_class: timestamp
+      icon: mdi:backup-restore
+
+template:
+  - binary_sensor:
+      - name: Vig Media Drive Mounted
+        unique_id: vig_media_drive_mounted
+        device_class: connectivity
+        state: "{{ states('sensor.vig_media_filesystem') not in ['not mounted', 'unknown'] }}"
+        availability: "{{ has_value('sensor.vig_media_filesystem') }}"
+        icon: mdi:harddisk-plus
+      - name: Vig Metrics Collector
+        unique_id: vig_metrics_collector
+        device_class: running
+        state: "{{ has_value('sensor.vig_cpu_usage') }}"
+        icon: mdi:chart-box-outline
+  - sensor:
+      - name: Vig Containers Total
+        unique_id: vig_containers_total
+        state: "{{ state_attr('sensor.vig_containers', 'total') }}"
+        availability: "{{ state_attr('sensor.vig_containers', 'total') is number }}"
+        icon: mdi:docker

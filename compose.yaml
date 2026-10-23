@@ -1,0 +1,106 @@
+# Vigilience - home infrastructure dashboard stack.
+#
+# Deploy ONLY through scripts/deploy.sh (or the equivalent documented command):
+#   docker compose --project-name vigilience \
+#     --env-file /home/linus/.config/vigilience/production.env -f compose.yaml up -d
+#
+# Design notes
+# - State lives in Docker named volumes (under /var/lib/docker on the internal
+#   SSD). The server's home directory is ecryptfs and is only mounted after
+#   login, so bind-mounting state from it would break unattended reboots.
+# - Nothing in this file touches Immich or the host-installed Plex.
+# - No container gets `privileged` or the raw Docker socket except the
+#   read-only, GET-only socket proxy.
+
+name: vigilience
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION:-2026.10.2}
+    container_name: vigilience-homeassistant
+    # Host networking is what the official Linux container guide uses; it is
+    # needed for LAN discovery and lets probes reach host-local services.
+    network_mode: host
+    environment:
+      TZ: ${TZ:-America/Toronto}
+      # Private, server-only values consumed by probe.sh (see .env.example).
+      VIG_GATEWAY_HOST: ${VIG_GATEWAY_HOST:-}
+      VIG_INTERNET_HOST_1: ${VIG_INTERNET_HOST_1:-1.1.1.1}
+      VIG_INTERNET_HOST_2: ${VIG_INTERNET_HOST_2:-9.9.9.9}
+      VIG_IMMICH_URL: ${VIG_IMMICH_URL:-}
+      VIG_PLEX_URL: ${VIG_PLEX_URL:-}
+      VIG_ROUTER_URL: ${VIG_ROUTER_URL:-}
+      VIG_VPN_URL: ${VIG_VPN_URL:-}
+    volumes:
+      - ha_config:/config
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+    stop_grace_period: 60s
+    mem_limit: 1536m
+    logging: *logging
+    depends_on:
+      - glances
+
+  glances:
+    image: nicolargo/glances:${GLANCES_VERSION:-4.5.8}
+    container_name: vigilience-glances
+    # Host network + host PID so CPU, memory, load, sensors and the Wi-Fi
+    # interface reflect the HP server, not the container.
+    network_mode: host
+    pid: host
+    environment:
+      TZ: ${TZ:-America/Toronto}
+      # REST API only, bound to loopback; Home Assistant reads it locally.
+      GLANCES_OPT: "-w --disable-webui -B 127.0.0.1 -p ${GLANCES_PORT:-61208}"
+      # Container stats come through the restricted proxy, never the socket.
+      DOCKER_HOST: tcp://127.0.0.1:${DOCKER_PROXY_PORT:-2375}
+    volumes:
+      # Read-only view of the WD media drive. rslave lets an unmount on the
+      # host propagate so "drive unmounted" is detected correctly.
+      - type: bind
+        source: ${MEDIA_MOUNT:-/mnt/media}
+        target: /mnt/media
+        read_only: true
+        bind:
+          propagation: ${MEDIA_PROPAGATION:-rslave}
+      # Empty volume whose filesystem is the internal SSD (/var/lib/docker);
+      # gives SSD capacity without exposing any host files.
+      - ssd_probe:/mnt/ssd:ro
+      - /etc/os-release:/etc/os-release:ro
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+    depends_on:
+      - docker-proxy
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:${SOCKET_PROXY_VERSION:-v0.5.0}
+    container_name: vigilience-docker-proxy
+    environment:
+      # Read-only: list/inspect containers and images (image names for the
+      # software inventory). Every POST/DELETE (start, stop, exec, ...) and
+      # all other endpoints are denied.
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:${DOCKER_PROXY_PORT:-2375}:2375"
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
+    restart: unless-stopped
+    mem_limit: 64m
+    logging: *logging
+
+volumes:
+  ha_config:
+  ssd_probe:

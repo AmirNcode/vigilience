@@ -1,0 +1,65 @@
+# Vigilience - Home Assistant configuration (managed in Git).
+#
+# scripts/deploy.sh copies this file and the vigilience/ directory into the
+# Home Assistant config volume on every deploy. Do not edit it inside the
+# container; edit it in the repository and redeploy.
+#
+# UI-managed data (users, integrations, devices, UI automations) lives in
+# .storage/ and automations.yaml etc. inside the volume and is never
+# overwritten by deploys.
+
+default_config:
+
+homeassistant:
+  packages: !include_dir_named vigilience/packages
+
+frontend:
+  themes: !include_dir_merge_named vigilience/themes
+
+recorder:
+  # SQLite on the internal SSD; 30 days of detailed history.
+  purge_keep_days: 30
+  commit_interval: 30
+  exclude:
+    entities:
+      - sensor.vig_quick_links
+      # Per-container detail changes every minute; the running count is
+      # recorded separately as sensor.vig_containers_running.
+      - sensor.vig_containers
+      # Raw probe results; history is kept by the derived latency sensors
+      # and up/down binary sensors.
+      - sensor.vig_internet_probe_1
+      - sensor.vig_internet_probe_2
+      - sensor.vig_gateway_probe
+      - sensor.vig_immich_probe
+      - sensor.vig_plex_probe
+
+logbook:
+  # Keep the activity timeline about events, not metric churn.
+  exclude:
+    entities:
+      - sensor.vig_issues
+      - sensor.vig_containers_total
+      - sensor.vig_server_uptime
+      - sensor.vig_lan_interface
+      - sensor.vig_quick_links
+      - sensor.vig_media_filesystem
+    entity_globs:
+      - sensor.vig_*_probe*
+
+logger:
+  default: warning
+
+lovelace:
+  dashboards:
+    vigilience-hq:
+      mode: yaml
+      filename: vigilience/dashboards/vigilience.yaml
+      title: Vigilience
+      icon: mdi:shield-home-outline
+      show_in_sidebar: true
+
+# UI editors (created empty on first deploy, never overwritten).
+automation ui: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
