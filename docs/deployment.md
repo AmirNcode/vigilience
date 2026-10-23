@@ -25,8 +25,9 @@ install -m 600 ~/vigilience/.env.example ~/.config/vigilience/production.env
 nano ~/.config/vigilience/production.env
 ```
 
-Set at least `VIG_GATEWAY_HOST` (router LAN IP) and the quick-link URLs
-(`VIG_IMMICH_URL`, `VIG_PLEX_URL`) as you reach them from your phone.
+Set `DOCKER_GID` (`getent group docker | cut -d: -f3`), `VIG_GATEWAY_HOST`
+(router LAN IP) and the quick-link URLs (`VIG_IMMICH_URL`, `VIG_PLEX_URL`)
+as you reach them from your phone.
 
 ```bash
 cd ~/vigilience

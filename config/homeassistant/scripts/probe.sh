@@ -7,6 +7,7 @@
 #
 #   probe.sh ping <host>   -> {"up":bool,"ms":float|null,"loss":int}
 #   probe.sh http <url>    -> {"up":bool,"code":int,"ms":float|null}
+#   probe.sh containers    -> {"running":n,"total":n,"items":[...]} via socket proxy
 #   probe.sh links         -> quick-link URLs taken from VIG_*_URL env vars
 
 mode="$1"
@@ -46,6 +47,47 @@ case "$mode" in
       ms=null
     fi
     printf '{"up":%s,"code":%d,"ms":%s}\n' "$up" "${code:-0}" "$ms"
+    ;;
+  containers)
+    # Docker container summary via the allowlisted socket proxy, which only
+    # permits GET /containers/json and GET /containers/<id>/stats (no
+    # inspect, so no environment variables or other secrets are readable).
+    api="http://127.0.0.1:${VIG_DOCKER_PROXY_PORT:-2375}"
+    list=$(curl -sf -m 5 "$api/containers/json?all=1" 2>/dev/null) || {
+      echo '{"running":null,"total":null,"items":[],"error":"proxy unreachable"}'
+      exit 0
+    }
+    tmp=$(mktemp -d)
+    for id in $(printf '%s' "$list" | jq -r '.[] | select(.State == "running") | .Id'); do
+      # stream=false samples twice (~1 s) so CPU % can be computed.
+      curl -sf -m 10 "$api/containers/$id/stats?stream=false" > "$tmp/$id.json" 2>/dev/null &
+    done
+    wait
+    stats=$(cat "$tmp"/*.json 2>/dev/null | jq -s '
+      map({key: .id, value: {
+        cpu: (((.cpu_stats.cpu_usage.total_usage - .precpu_stats.cpu_usage.total_usage)
+               / ((.cpu_stats.system_cpu_usage - .precpu_stats.system_cpu_usage) | if . > 0 then . else 1 end)
+               * (.cpu_stats.online_cpus // 1) * 100) * 10 | round / 10),
+        mem: (((.memory_stats.usage // 0) - (.memory_stats.stats.inactive_file // 0)) / 1048576 | round)
+      }}) | from_entries' 2>/dev/null) || stats='{}'
+    rm -rf "$tmp"
+    printf '%s' "$list" | jq -c --argjson s "$stats" '
+      {running: (map(select(.State == "running")) | length),
+       total: length,
+       items: (map({
+         name: (.Names[0] | ltrimstr("/")),
+         status: (if .State != "running" then .State
+                  elif (.Status | test("\\(unhealthy\\)")) then "unhealthy"
+                  elif (.Status | test("\\(healthy\\)")) then "healthy"
+                  elif (.Status | test("\\(health: starting\\)")) then "starting"
+                  else "running" end),
+         uptime: (if .State == "running"
+                  then (.Status | sub("^Up "; "") | sub(" \\(.*\\)$"; ""))
+                  else .Status end),
+         image: .Image,
+         cpu: ($s[.Id].cpu // null),
+         mem: ($s[.Id].mem // null)
+       }) | sort_by(.name))}'
     ;;
   links)
     jq -cn \

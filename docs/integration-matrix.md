@@ -14,7 +14,7 @@ hardware/topology cannot provide it).
 | Internal SSD capacity | Glances `/api/4/fs` via SSD probe volume | Live |
 | WD drive capacity + mount state | Glances `/api/4/fs` via read-only `rslave` bind | Live |
 | WD SMART health | smartctl over USB bridge | Not configured (needs root; USB bridge support unverified) |
-| Docker containers | Glances → socket proxy | Live |
+| Docker containers | socket proxy (list + stats) | Live |
 | HP Wi-Fi throughput | Glances `/api/4/network` | Live (server's own traffic only) |
 | Internet reachability, latency, loss | ping to 2 public resolvers | Live |
 | Gateway reachability, latency | ping to router LAN IP (env) | Live once `VIG_GATEWAY_HOST` set |

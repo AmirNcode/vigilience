@@ -5,8 +5,8 @@
 | Service | Image (pinned) | Network | Privileges | Purpose |
 |---|---|---|---|---|
 | `homeassistant` | `ghcr.io/home-assistant/home-assistant:2026.10.2` | host | none extra (no `privileged`) | Login, dashboards, history DB, alerts |
-| `glances` | `nicolargo/glances:4.5.8` | host, `pid: host` | read-only bind of the media drive, empty SSD probe volume | Host CPU/RAM/load/sensors/filesystems/network, container stats |
-| `docker-proxy` | `tecnativa/docker-socket-proxy:v0.5.0` | bridge, port bound to `127.0.0.1` | Docker socket mounted read-only, only `GET /containers` and `GET /images` allowed | Lets Glances read container state without socket access |
+| `glances` | `nicolargo/glances:4.5.8` | host, `pid: host` | read-only bind of the media drive, empty SSD probe volume; **no Docker access** | Host CPU/RAM/load/sensors/filesystems/network |
+| `docker-proxy` | `wollomatic/socket-proxy:1.13.1` | host, listens and accepts on `127.0.0.1` only | runs as `nobody:docker`, `cap_drop: ALL`, read-only, no-new-privileges; socket mounted read-only | Anchored allowlist: `GET /containers/json` and `GET /containers/<id>/stats` only |
 
 Compose project name: `vigilience`. Immich and the host-installed Plex are not
 referenced by Compose in any way.
@@ -20,6 +20,11 @@ referenced by Compose in any way.
   monitor integrations are UI-configured in current Home Assistant. Using the
   `rest` and `command_line` integrations keeps the whole sensor layer in Git,
   reviewable and reproducible on a fresh install.
+- **Container status without secrets.** Docker's inspect endpoint returns
+  every container's environment variables (e.g. database passwords). The
+  proxy therefore allows only the container list and stats endpoints; Glances'
+  Docker client needs inspect, so Glances gets no Docker access at all and
+  `probe.sh containers` builds the table from list + stats.
 - **Glances in a container** (instead of the distro's Glances 3.4 service,
   which runs in XML-RPC mode without the REST API) avoids changing system
   services or needing sudo.
@@ -42,7 +47,7 @@ probe.sh (command_line, 60 s)  ─► sensor.vig_*_probe (up/down + ms, loss, co
                                    └─► template: binary_sensor.vig_internet/gateway/immich/plex
                                    └─► template: sensor.vig_*_latency / *_response (ms; unknown when down)
 Glances REST (rest, 30–300 s)  ─► sensor.vig_cpu_usage, memory, load, fs, sensors, network, uptime
-Glances containers (jq, 60 s)  ─► sensor.vig_containers (+ items attribute)
+probe.sh containers (60 s)     ─► sensor.vig_containers (+ items attribute) via socket proxy
 health templates               ─► sensor.vig_issues (critical/warnings lists) ─► sensor.vig_health
 automations                    ─► persistent notifications + logbook entries
 ```

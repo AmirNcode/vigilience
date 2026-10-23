@@ -6,7 +6,7 @@ It answers, at a glance: is the internet up, are the server's services
 and what changed recently.
 
 Built on **Home Assistant Container** (auth, dashboards, history, alerts) with
-**Glances** for host metrics and a **read-only Docker socket proxy** for
+**Glances** for host metrics and an **allowlisted Docker socket proxy** for
 container status. Everything is configuration-as-code in this repository;
 private values and runtime state live only on the server.
 
@@ -33,7 +33,7 @@ Every value is measured. Anything not integrated is labelled
 iPhone / Mac ──LAN or home VPN──► Home Assistant :8123  (login required)
                                     │  YAML packages: rest + command_line sensors
                                     ├─► Glances API      127.0.0.1:61208 (host metrics)
-                                    │      └─► socket proxy 127.0.0.1:2375 (GET containers/images only)
+                                    ├─► socket proxy     127.0.0.1:2375  (GET container list + stats only)
                                     ├─► probe.sh → ping gateway / 2 internet hosts
                                     └─► probe.sh → HTTP Immich :2283, Plex :32400/identity
 ```

@@ -32,8 +32,8 @@
 
 | Concern | Control |
 |---|---|
-| Docker socket | Only the socket proxy mounts it, read-only. Proxy allows `GET /containers` and `GET /images`; all POST/DELETE and other endpoints return 403 (verified by `verify.sh`). |
-| Proxy exposure | Published on `127.0.0.1` only. Note: any local process on the server can read container metadata (including environment variables) through it. |
+| Docker socket | Only the socket proxy mounts it (read-only, non-root, all capabilities dropped). Anchored allowlist: `GET /containers/json` and `GET /containers/<id>/stats`. Inspect (which would reveal container environment variables/secrets), logs, export, archive, exec, images and every non-GET method are refused — `verify.sh` asserts 403/405 for these. |
+| Proxy exposure | Listens on `127.0.0.1` and only accepts loopback clients. Local processes can see container names, images, state and resource usage — nothing more. |
 | Glances | REST API bound to `127.0.0.1`, web UI disabled; media drive mounted read-only. |
 | Home Assistant | Host networking (official Linux guidance) without `privileged` or device access. No USB/Bluetooth radios passed through. |
 | Images | Pinned versions, no `latest`, no auto-updaters. |

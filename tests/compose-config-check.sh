@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-cfg="$(docker compose --project-name vigilience --env-file .env.example -f compose.yaml config --format json)"
+cfg="$(DOCKER_GID=999 docker compose --project-name vigilience --env-file .env.example -f compose.yaml config --format json)"
 echo "PASS compose config renders"
 
 python3 - "$cfg" <<'EOF'
@@ -27,9 +27,18 @@ for name, svc in s.items():
             errs.append(f"{name}: docker.sock not read-only")
     if svc.get("restart") != "unless-stopped":
         errs.append(f"{name}: restart policy {svc.get('restart')}")
-env = s["docker-proxy"]["environment"]
-if str(env.get("POST")) != "0":
-    errs.append("docker-proxy: POST not disabled")
+px = s["docker-proxy"]
+cmd = px.get("command", [])
+if any(not a.startswith(("-listenip=", "-proxyport=", "-allowfrom=", "-allowGET=", "-watchdog", "-stoponwatchdog", "-shutdowngracetime")) for a in cmd):
+    errs.append(f"docker-proxy: unexpected flag (only GET allowlist permitted): {cmd}")
+if "-listenip=127.0.0.1" not in cmd or "-allowfrom=127.0.0.1/32" not in cmd:
+    errs.append("docker-proxy: not restricted to loopback")
+if str(px.get("user", "")).startswith("0") or not px.get("user"):
+    errs.append("docker-proxy: runs as root")
+if "ALL" not in px.get("cap_drop", []) or not px.get("read_only"):
+    errs.append("docker-proxy: not cap_drop ALL + read_only")
+if "DOCKER_HOST" in s["glances"].get("environment", {}):
+    errs.append("glances: has Docker access")
 media = [v for v in s["glances"]["volumes"] if v.get("target") == "/mnt/media"][0]
 if not media.get("read_only"):
     errs.append("glances: media mount not read-only")
@@ -37,5 +46,5 @@ if c.get("name") != "vigilience":
     errs.append("project name is not vigilience")
 if errs:
     print("FAIL compose invariants:\n  " + "\n  ".join(errs)); sys.exit(1)
-print("PASS compose invariants (no privileged, pinned images, loopback ports, read-only socket/media)")
+print("PASS compose invariants (no privileged, pinned images, loopback-only, GET-allowlist proxy, read-only socket/media)")
 EOF

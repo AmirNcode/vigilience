@@ -358,11 +358,11 @@ views:
               | | Container | Uptime | CPU | RAM |
               |:-:|:--|:--|--:|--:|
               {% for c in items -%}
-              | {{ '🟢' if c.status in ['running','healthy'] else ('🟡' if c.status in ['starting','restarting','paused'] else '🔴') }} | **{{ c.name }}**<br><small>{{ c.status }} · {{ c.image }}</small> | {{ c.uptime or '—' }} | {{ c.cpu }}% | {{ c.mem }} MiB |
+              | {{ '🟢' if c.status in ['running','healthy'] else ('🟡' if c.status in ['starting','restarting','paused'] else '🔴') }} | **{{ c.name }}**<br><small>{{ c.status }} · {{ c.image }}</small> | {{ c.uptime or '—' }} | {{ c.cpu ~ '%' if c.cpu is number else '—' }} | {{ c.mem ~ ' MiB' if c.mem is number else '—' }} |
               {% endfor %}
-              <small>{{ states('sensor.vig_containers') }} of {{ state_attr('sensor.vig_containers','total') }} running · read-only view via socket proxy</small>
+              <small>{{ states('sensor.vig_containers') }} of {{ state_attr('sensor.vig_containers','total') }} running · read-only: container list + stats only</small>
               {% else %}
-              Container data not available (Glances or socket proxy not responding).
+              Container data not available (socket proxy not responding).
               {% endif %}
 
       - type: grid

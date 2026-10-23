@@ -9,8 +9,8 @@
 #   SSD). The server's home directory is ecryptfs and is only mounted after
 #   login, so bind-mounting state from it would break unattended reboots.
 # - Nothing in this file touches Immich or the host-installed Plex.
-# - No container gets `privileged` or the raw Docker socket except the
-#   read-only, GET-only socket proxy.
+# - No container gets `privileged`. Only the socket proxy mounts the Docker
+#   socket, and it allows nothing but GET container list + stats.
 
 name: vigilience
 
@@ -37,6 +37,7 @@ services:
       VIG_PLEX_URL: ${VIG_PLEX_URL:-}
       VIG_ROUTER_URL: ${VIG_ROUTER_URL:-}
       VIG_VPN_URL: ${VIG_VPN_URL:-}
+      VIG_DOCKER_PROXY_PORT: ${DOCKER_PROXY_PORT:-2375}
     volumes:
       - ha_config:/config
       - /etc/localtime:/etc/localtime:ro
@@ -46,6 +47,7 @@ services:
     logging: *logging
     depends_on:
       - glances
+      - docker-proxy
 
   glances:
     image: nicolargo/glances:${GLANCES_VERSION:-4.5.8}
@@ -57,9 +59,10 @@ services:
     environment:
       TZ: ${TZ:-America/Toronto}
       # REST API only, bound to loopback; Home Assistant reads it locally.
-      GLANCES_OPT: "-w --disable-webui -B 127.0.0.1 -p ${GLANCES_PORT:-61208}"
-      # Container stats come through the restricted proxy, never the socket.
-      DOCKER_HOST: tcp://127.0.0.1:${DOCKER_PROXY_PORT:-2375}
+      # Glances gets no Docker access: its Docker client needs container
+      # inspect, which exposes environment variables (secrets) of every
+      # container. Container status comes from the allowlisted proxy instead.
+      GLANCES_OPT: "-w --disable-webui -B 127.0.0.1 -p ${GLANCES_PORT:-61208} --disable-plugin containers"
     volumes:
       # Read-only view of the WD media drive. rslave lets an unmount on the
       # host propagate so "drive unmounted" is detected correctly.
@@ -76,29 +79,31 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     logging: *logging
-    depends_on:
-      - docker-proxy
 
   docker-proxy:
-    image: tecnativa/docker-socket-proxy:${SOCKET_PROXY_VERSION:-v0.5.0}
+    image: wollomatic/socket-proxy:${SOCKET_PROXY_VERSION:-1.13.1}
     container_name: vigilience-docker-proxy
-    environment:
-      # Read-only: list/inspect containers and images (image names for the
-      # software inventory). Every POST/DELETE (start, stop, exec, ...) and
-      # all other endpoints are denied.
-      CONTAINERS: 1
-      IMAGES: 1
-      POST: 0
+    # Listens on the server's loopback only and only accepts loopback clients.
+    network_mode: host
+    # Non-root; the docker group id is needed to read the socket.
+    user: "65534:${DOCKER_GID:?set DOCKER_GID (getent group docker) in the env file}"
+    command:
+      - "-listenip=127.0.0.1"
+      - "-proxyport=${DOCKER_PROXY_PORT:-2375}"
+      - "-allowfrom=127.0.0.1/32"
+      # Allowlist (anchored regex): container list and per-container stats.
+      # Inspect, logs, export, archive, exec and every non-GET method are denied.
+      - "-allowGET=(/v1\\.[0-9]{1,2})?/containers/(json|[0-9a-f]{12,64}/stats)"
+      - "-watchdoginterval=300"
+      - "-stoponwatchdog"
+      - "-shutdowngracetime=5"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    ports:
-      - "127.0.0.1:${DOCKER_PROXY_PORT:-2375}:2375"
     read_only: true
-    tmpfs:
-      - /run
-      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     restart: unless-stopped
-    mem_limit: 64m
+    mem_limit: 32m
     logging: *logging
 
 volumes:

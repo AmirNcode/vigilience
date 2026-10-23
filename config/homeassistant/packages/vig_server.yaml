@@ -264,20 +264,14 @@ rest:
         icon: mdi:linux
 
 command_line:
-  # Docker containers via Glances (which talks to the GET-only socket proxy).
+  # Docker containers via the allowlisted socket proxy (list + stats only).
   - sensor:
       name: Vig Containers
       unique_id: vig_containers
-      command: >-
-        curl -sf -m 8 http://127.0.0.1:61208/api/4/containers
-        | jq -c '{running: (map(select(.status == "running" or .status == "healthy")) | length),
-        total: length,
-        items: (sort_by(.name) | map({name, status, uptime,
-        image: ((.image // []) | if type == "array" then (.[0] // "") else . end | split(",")[0]),
-        cpu: ((.cpu.total // 0) * 10 | round / 10),
-        mem: (((.memory_usage // 0) / 1048576) | round)}))}'
+      command: "sh /config/vigilience/scripts/probe.sh containers"
       scan_interval: 60
-      command_timeout: 15
+      command_timeout: 30
+      availability: "{{ value_json.running is number }}"
       value_template: "{{ value_json.running }}"
       json_attributes: [total, items]
       unit_of_measurement: running

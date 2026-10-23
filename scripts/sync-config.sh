@@ -11,7 +11,9 @@ source "$(dirname "$0")/lib.sh"
 
 require_env_file
 IMAGE="$(ha_image)"
-docker volume inspect "$HA_VOLUME" >/dev/null 2>&1 || docker volume create "$HA_VOLUME" >/dev/null
+docker volume inspect "$HA_VOLUME" >/dev/null 2>&1 || docker volume create \
+  --label com.docker.compose.project="$PROJECT" --label com.docker.compose.volume=ha_config \
+  "$HA_VOLUME" >/dev/null
 
 info "Syncing config into volume $HA_VOLUME"
 with_ha_volume -v "$REPO_DIR/config/homeassistant:/src:ro" --entrypoint sh "$IMAGE" -euc '
