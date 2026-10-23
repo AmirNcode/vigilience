@@ -161,11 +161,19 @@ automation:
       - delay: "00:03:00"
       - repeat:
           for_each: >
-            {{ ['binary_sensor.vig_internet', 'binary_sensor.vig_gateway',
-                'binary_sensor.vig_immich', 'binary_sensor.vig_plex',
-                'binary_sensor.vig_metrics_collector',
-                'binary_sensor.vig_media_drive_mounted']
-               | select('is_state', 'off') | list }}
+            {% set ns = namespace(out=[]) %}
+            {% for e in ['binary_sensor.vig_internet', 'binary_sensor.vig_gateway',
+                         'binary_sensor.vig_immich', 'binary_sensor.vig_plex',
+                         'binary_sensor.vig_metrics_collector',
+                         'binary_sensor.vig_media_drive_mounted'] %}
+              {# Only entities down since startup; later outages are handled
+                 by the regular 2-minute outage automation. #}
+              {% if is_state(e, 'off')
+                    and as_timestamp(states[e].last_changed) < as_timestamp(now()) - 150 %}
+                {% set ns.out = ns.out + [e] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.out }}
           sequence:
             - action: persistent_notification.create
               data:

@@ -20,6 +20,8 @@ alias vc='docker compose --project-name vigilience --env-file ~/.config/vigilien
 | Charts say "No statistics found" | New install | Hourly statistics appear after the first full hour |
 | After reboot dashboard missing | `systemctl is-active docker`; `vc ps` | Containers use `restart: unless-stopped` and named volumes; `vc up -d` |
 | HA warns about the HTTP config | — | Only if you added `http:` options; confirm in the dialog |
+| Log: `habluetooth ... Missing NET_ADMIN/NET_RAW` once at startup | Settings → Devices & services → Bluetooth shows *disabled* | Expected. USB discovery finds the laptop's Bluetooth adapter; its entry is disabled and the container is not given extra capabilities. If it shows as enabled, disable it there. |
+| Log: `async_upnp_client.ssdp ... Operation not permitted` | — | Host firewall/VPN client blocks some multicast sends. Only affects UPnP auto-discovery; harmless. |
 
 Logs:
 

@@ -23,6 +23,9 @@ _Last updated: 2026-10-23_
 - [x] Reachability: internet (2 hosts), gateway, Immich, native Plex
 - [x] Health model, de-duplicated alerts, activity timeline
 - [x] Manual SSH deploy with validation, backup, verify, rollback
+- [x] Safe outage test on production (alert + recovery logged) — see docs/test-results.md
+- [x] Footprint measured: ≈ +0.48 GiB RAM, < 1 % CPU idle
+- [ ] Full server reboot test — needs owner approval (interrupts Immich/Plex briefly)
 - [ ] Owner account onboarding — **user action** (see deployment.md §1)
 - [ ] iPhone home-screen + VPN check — **user action**
 
