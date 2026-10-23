@@ -8,7 +8,27 @@
 # .storage/ and automations.yaml etc. inside the volume and is never
 # overwritten by deploys.
 
-default_config:
+# Equivalent of `default_config:` (HA 2026.10) minus `bluetooth`: the server's
+# Bluetooth adapter is not used, and managing it would need NET_ADMIN/NET_RAW.
+assist_pipeline:
+cloud:
+conversation:
+dhcp:
+energy:
+file:
+go2rtc:
+history:
+homeassistant_alerts:
+media_source:
+mobile_app:
+my:
+ssdp:
+stream:
+sun:
+usage_prediction:
+usb:
+webhook:
+zeroconf:
 
 homeassistant:
   packages: !include_dir_named vigilience/packages
