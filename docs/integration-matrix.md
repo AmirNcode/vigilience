@@ -43,7 +43,7 @@ Home / Cameras views automatically.
 | Roomba | iRobot Roomba and Braava (official, local) | Not configured: model + on-robot pairing |
 | Fire TV ×2 | Android TV Remote (official, local) | Not configured: pairing code on TV |
 | Apple TV | Apple TV (official, local) | Not configured: pairing code on TV |
-| NVR + 3 wired cameras | Generic camera / ONVIF | Setup pending: NVR brand/model needed (label, app name, admin UI) |
+| Legacy analog DVR + 3 wired cameras | Generic Camera (still image URL, basic auth) | Snapshots only: DVR has no RTSP/ONVIF. Entities `camera.dvr_ch1`, `camera.dvr_ch3`, `camera.dvr_ch4`. HD needs HD-over-coax cameras + hybrid DVR |
 | Tapo porch camera | TP-Link Tapo (official) | Not configured: model + camera account |
 | Blink ×3 | Blink (official, cloud) | Not configured: account sign-in; snapshots/motion/battery only |
 

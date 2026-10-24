@@ -585,9 +585,34 @@ views:
 
               | Camera | Status |
               |:--|:--|
-              | 3× wired outdoor (NVR) | **Setup pending — NVR identification.** Check the label on the NVR or the phone app name; RTSP/ONVIF support decides the next step. |
+              | 3× wired outdoor (analog DVR) | **Snapshots only** — legacy H.264 DVR has no RTSP/ONVIF; Generic Camera polls its JPEG endpoint (~D1 max). HD needs new cameras + DVR. |
               | Tapo porch camera | **Not configured** — needs model; Tapo cameras offering a local RTSP "camera account" can be added via the official TP-Link Tapo integration. |
               | 3× Blink | **Not configured** — Blink integration provides snapshots, motion and battery; no continuous live view. |
+
+      # Legacy analog DVR, one Generic Camera per channel (CH2 has no camera).
+      # Entity ids are set when adding the cameras in the HA UI; the DVR
+      # address and login live in .storage, never in this file.
+      - type: grid
+        column_span: 3
+        cards:
+          - type: heading
+            heading: DVR feeds
+            icon: mdi:cctv
+          - type: picture-entity
+            entity: camera.dvr_ch1
+            name: DVR CH1
+            camera_view: live
+            grid_options: {columns: 4}
+          - type: picture-entity
+            entity: camera.dvr_ch3
+            name: DVR CH3
+            camera_view: live
+            grid_options: {columns: 4}
+          - type: picture-entity
+            entity: camera.dvr_ch4
+            name: DVR CH4
+            camera_view: live
+            grid_options: {columns: 4}
 
   # ───────────────────────────── SECURITY ─────────────────────────────
   - title: Security
