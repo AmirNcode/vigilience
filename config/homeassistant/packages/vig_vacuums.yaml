@@ -1,0 +1,69 @@
+# Vigilience - room-by-room vacuum cleaning.
+#
+# One toggle per mapped room; the "clean selected" script sends the ticked
+# rooms to sharkiq.clean_room (custom sharkiq integration). Room names must
+# match the robot's map exactly as shown in the SharkClean app.
+
+input_boolean:
+  vig_room_robert_gaming_area:
+    name: Gaming Area
+    icon: mdi:controller
+  vig_room_robert_kitchen:
+    name: Kitchen
+    icon: mdi:silverware-fork-knife
+  vig_room_robert_family_room:
+    name: Family Room
+    icon: mdi:sofa
+  vig_room_living_foyer_foyer:
+    name: Foyer
+    icon: mdi:door-open
+  vig_room_living_foyer_hallway:
+    name: Hallway
+    icon: mdi:shoe-print
+  vig_room_living_foyer_living_room:
+    name: Living Room
+    icon: mdi:sofa-outline
+  vig_room_living_foyer_dining_room:
+    name: Dining Room
+    icon: mdi:table-chair
+
+script:
+  vig_clean_rooms_robert:
+    alias: Robert - clean selected rooms
+    icon: mdi:robot-vacuum
+    mode: single
+    sequence:
+      - variables:
+          rooms: >-
+            {{ states.input_boolean
+               | selectattr('entity_id', 'search', '^input_boolean\.vig_room_robert_')
+               | selectattr('state', 'eq', 'on')
+               | map(attribute='name') | list }}
+      - if: "{{ rooms | count == 0 }}"
+        then:
+          - stop: No rooms selected
+      - action: sharkiq.clean_room
+        target:
+          entity_id: vacuum.robert
+        data:
+          rooms: "{{ rooms }}"
+
+  vig_clean_rooms_living_foyer:
+    alias: Living & foyer - clean selected rooms
+    icon: mdi:robot-vacuum
+    mode: single
+    sequence:
+      - variables:
+          rooms: >-
+            {{ states.input_boolean
+               | selectattr('entity_id', 'search', '^input_boolean\.vig_room_living_foyer_')
+               | selectattr('state', 'eq', 'on')
+               | map(attribute='name') | list }}
+      - if: "{{ rooms | count == 0 }}"
+        then:
+          - stop: No rooms selected
+      - action: sharkiq.clean_room
+        target:
+          entity_id: vacuum.living_foyer
+        data:
+          rooms: "{{ rooms }}"

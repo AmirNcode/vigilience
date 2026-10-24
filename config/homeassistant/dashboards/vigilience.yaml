@@ -576,6 +576,32 @@ views:
             entity: sensor.robert_battery
             name: Robert battery
           - type: tile
+            entity: input_boolean.vig_room_robert_gaming_area
+            grid_options: {columns: 4}
+            features:
+              - type: toggle
+            features_position: inline
+          - type: tile
+            entity: input_boolean.vig_room_robert_kitchen
+            grid_options: {columns: 4}
+            features:
+              - type: toggle
+            features_position: inline
+          - type: tile
+            entity: input_boolean.vig_room_robert_family_room
+            grid_options: {columns: 4}
+            features:
+              - type: toggle
+            features_position: inline
+          - type: tile
+            entity: script.vig_clean_rooms_robert
+            name: Clean selected rooms
+            icon: mdi:play-circle-outline
+            hide_state: true
+            grid_options: {columns: full}
+            tap_action: {action: perform-action, perform_action: script.vig_clean_rooms_robert}
+            icon_tap_action: {action: perform-action, perform_action: script.vig_clean_rooms_robert}
+          - type: tile
             entity: vacuum.living_foyer
             name: Living & foyer
             state_content: [state, last_changed]
@@ -585,6 +611,38 @@ views:
           - type: tile
             entity: sensor.living_foyer_battery
             name: Living & foyer battery
+          - type: tile
+            entity: input_boolean.vig_room_living_foyer_foyer
+            grid_options: {columns: 4}
+            features:
+              - type: toggle
+            features_position: inline
+          - type: tile
+            entity: input_boolean.vig_room_living_foyer_hallway
+            grid_options: {columns: 4}
+            features:
+              - type: toggle
+            features_position: inline
+          - type: tile
+            entity: input_boolean.vig_room_living_foyer_living_room
+            grid_options: {columns: 4}
+            features:
+              - type: toggle
+            features_position: inline
+          - type: tile
+            entity: input_boolean.vig_room_living_foyer_dining_room
+            grid_options: {columns: 4}
+            features:
+              - type: toggle
+            features_position: inline
+          - type: tile
+            entity: script.vig_clean_rooms_living_foyer
+            name: Clean selected rooms
+            icon: mdi:play-circle-outline
+            hide_state: true
+            grid_options: {columns: full}
+            tap_action: {action: perform-action, perform_action: script.vig_clean_rooms_living_foyer}
+            icon_tap_action: {action: perform-action, perform_action: script.vig_clean_rooms_living_foyer}
       - type: grid
         column_span: 3
         cards:

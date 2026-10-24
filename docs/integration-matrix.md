@@ -38,7 +38,7 @@ Home / Cameras views automatically.
 |---|---|---|
 | ecobee thermostat | ecobee (official, cloud) | Not configured: ecobee account sign-in |
 | VeSync switch + 3 outlets | VeSync (official, cloud) | Not configured: VeSync sign-in; confirm models |
-| Meross outdoor switch | none official; evaluate before using a custom component | Not configured: model needed |
+| Meross outdoor light switch | none official; `meross_lan` (custom, local) is the candidate | Not configured: device answers Meross's local HTTP API; custom component not installed yet |
 | Kasa kitchen switch (HS200) | TP-Link Smart Home (official, local) | Connected: `switch.kitchen_lights` |
 | Shark robots ×2 | Custom `sharkiq` (dr34ming/ha-sharkiq @ `c2482d7`, cloud) — overrides the official one, whose server-side login Shark's Auth0 blocks ("Suspicious request requires verification") | Connected: `vacuum.robert`, `vacuum.living_foyer`, battery in `sensor.robert_battery`, `sensor.living_foyer_battery` |
 | Roomba | iRobot Roomba and Braava (official, local) | Not configured: robot (found on the LAN, MQTT port 8883 open) returns a password it then rejects ("Bad username or password"); model needed |
@@ -62,6 +62,9 @@ touch that directory, and `scripts/backup-config.sh` includes it.
   `VacuumEntityFeature.BATTERY` and failed to load. The flag was dropped and a
   `sensor.py` battery sensor added; `.source-commit` notes this. Re-apply (or
   check upstream fixed it) before taking any update.
+- **Adds `sharkiq.clean_room`.** The upstream code had `async_clean_rooms`
+  but registered no service; `services.py` mirrors core sharkiq's. Used by
+  `packages/vig_vacuums.yaml` (room toggles + "clean selected" scripts).
 - **Sign-in needs a URL-scheme catcher on the Mac.** Shark's login redirects to
   `com.sharkninja.shark://…?code=`, which a desktop browser silently drops. A
   tiny AppleScript applet registered for that scheme (`on open location` →
