@@ -38,7 +38,7 @@ Home / Cameras views automatically.
 |---|---|---|
 | ecobee thermostat | ecobee (official, cloud) | Not configured: ecobee account sign-in |
 | VeSync switch + 3 outlets | VeSync (official, cloud) | Not configured: VeSync sign-in; confirm models |
-| Meross outdoor light switch | none official; `meross_lan` (custom, local) is the candidate | Not configured: device answers Meross's local HTTP API; custom component not installed yet |
+| Meross outdoor light switch | `meross_lan` v5.8.0 (custom, local polling) | Installed; device not added yet (needs Meross account sign-in once to fetch the device key) |
 | Kasa kitchen switch (HS200) | TP-Link Smart Home (official, local) | Connected: `switch.kitchen_lights` |
 | Shark robots ×2 | Custom `sharkiq` (dr34ming/ha-sharkiq @ `c2482d7`, cloud) — overrides the official one, whose server-side login Shark's Auth0 blocks ("Suspicious request requires verification") | Connected: `vacuum.robert`, `vacuum.living_foyer`, battery in `sensor.robert_battery`, `sensor.living_foyer_battery` |
 | Roomba | iRobot Roomba and Braava (official, local) | Not configured: robot (found on the LAN, MQTT port 8883 open) returns a password it then rejects ("Bad username or password"); model needed |
@@ -50,7 +50,7 @@ Home / Cameras views automatically.
 
 ## Custom integrations (HACS)
 
-HACS 2.0.5 and the custom `sharkiq` integration were copied by hand into
+HACS 2.0.5, `meross_lan` v5.8.0 and the custom `sharkiq` integration were copied by hand into
 `/config/custom_components/` in the `vigilience_ha_config` volume. Deploys never
 touch that directory, and `scripts/backup-config.sh` includes it.
 
@@ -70,6 +70,9 @@ touch that directory, and `scripts/backup-config.sh` includes it.
   tiny AppleScript applet registered for that scheme (`on open location` →
   clipboard) captures it; paste into the HA dialog within ~30 s. Only needed
   again on reauth.
+- **meross_lan is scanned, not line-reviewed.** v5.8.0 release tarball
+  (krahabb/meross_lan, MIT, ~24k lines); only Meross cloud hosts, no shell/eval.
+  Version is in `custom_components/meross_lan/.source-commit`.
 - **Overrides core.** It shadows the official `sharkiq`. When HA ships a
   `sharkiq` library that signs in again (reportedly 1.5.1+), delete
   `custom_components/sharkiq`, restart, and switch back to the official one.
