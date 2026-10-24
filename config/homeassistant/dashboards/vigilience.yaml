@@ -601,8 +601,47 @@ views:
               | Camera | Status |
               |:--|:--|
               | 3× wired outdoor (analog DVR) | **Snapshots only** — legacy H.264 DVR has no RTSP/ONVIF; Generic Camera polls its JPEG endpoint (~D1 max). HD needs new cameras + DVR. |
-              | Tapo porch camera | **Not configured** — needs model; Tapo cameras offering a local RTSP "camera account" can be added via the official TP-Link Tapo integration. |
+              | Tapo pan/tilt camera (Chipstead) | {{ 'Live view + pan/tilt via TP-Link Smart Home' if states('camera.chipstead_live_view') not in ['unknown','unavailable'] else '**Unavailable**' }} |
               | 3× Blink | **Not configured** — Blink integration provides snapshots, motion and battery; no continuous live view. |
+
+      # Tapo pan/tilt camera via TP-Link Smart Home. The arrows press the
+      # integration's pan/tilt buttons; each press moves by the step numbers.
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Chipstead
+            icon: mdi:cctv
+          - type: picture-glance
+            title: Chipstead
+            camera_image: camera.chipstead_live_view
+            camera_view: live
+            grid_options: {columns: full}
+            entities:
+              - entity: button.chipstead_pan_left
+                icon: mdi:arrow-left-bold
+                tap_action: {action: perform-action, perform_action: button.press, target: {entity_id: button.chipstead_pan_left}}
+              - entity: button.chipstead_tilt_up
+                icon: mdi:arrow-up-bold
+                tap_action: {action: perform-action, perform_action: button.press, target: {entity_id: button.chipstead_tilt_up}}
+              - entity: button.chipstead_tilt_down
+                icon: mdi:arrow-down-bold
+                tap_action: {action: perform-action, perform_action: button.press, target: {entity_id: button.chipstead_tilt_down}}
+              - entity: button.chipstead_pan_right
+                icon: mdi:arrow-right-bold
+                tap_action: {action: perform-action, perform_action: button.press, target: {entity_id: button.chipstead_pan_right}}
+          - type: tile
+            entity: number.chipstead_pan_degrees
+            name: Pan step
+          - type: tile
+            entity: number.chipstead_tilt_degrees
+            name: Tilt step
+          - type: tile
+            entity: switch.chipstead_motion_detection
+            name: Motion detection
+          - type: tile
+            entity: switch.chipstead_person_detection
+            name: Person detection
 
       # Legacy analog DVR, one Generic Camera per channel (CH2 has no camera).
       # Entity ids are set when adding the cameras in the HA UI; the DVR
