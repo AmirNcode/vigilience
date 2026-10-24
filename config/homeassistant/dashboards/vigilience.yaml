@@ -558,6 +558,33 @@ views:
             features:
               - type: toggle
             features_position: inline
+      # Shark vacuums via the custom sharkiq integration; HA 2026 dropped
+      # battery from vacuum entities, so charge comes from separate sensors.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Vacuums
+            icon: mdi:robot-vacuum
+          - type: tile
+            entity: vacuum.robert
+            name: Robert
+            state_content: [state, last_changed]
+            features:
+              - type: vacuum-commands
+                commands: [start_pause, stop, return_home, locate]
+          - type: tile
+            entity: sensor.robert_battery
+            name: Robert battery
+          - type: tile
+            entity: vacuum.living_foyer
+            name: Living & foyer
+            state_content: [state, last_changed]
+            features:
+              - type: vacuum-commands
+                commands: [start_pause, stop, return_home, locate]
+          - type: tile
+            entity: sensor.living_foyer_battery
+            name: Living & foyer battery
       - type: grid
         column_span: 3
         cards:
