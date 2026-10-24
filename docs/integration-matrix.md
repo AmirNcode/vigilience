@@ -39,13 +39,28 @@ Home / Cameras views automatically.
 | ecobee thermostat | ecobee (official, cloud) | Not configured: ecobee account sign-in |
 | VeSync switch + 3 outlets | VeSync (official, cloud) | Not configured: VeSync sign-in; confirm models |
 | Meross outdoor switch | none official; evaluate before using a custom component | Not configured: model needed |
-| Shark robots ×2 | SharkIQ (official, cloud) | Not configured: models/account |
-| Roomba | iRobot Roomba and Braava (official, local) | Not configured: model + on-robot pairing |
+| Kasa kitchen switch (HS200) | TP-Link Smart Home (official, local) | Connected: `switch.kitchen_lights` |
+| Shark robots ×2 | Custom `sharkiq` (dr34ming/ha-sharkiq @ `c2482d7`, cloud) — overrides the official one, whose server-side login Shark's Auth0 blocks ("Suspicious request requires verification") | Installed; not signed in yet. Browser PKCE sign-in, see below |
+| Roomba | iRobot Roomba and Braava (official, local) | Not configured: robot (found on the LAN, MQTT port 8883 open) returns a password it then rejects ("Bad username or password"); model needed |
 | Fire TV ×2 | Android TV Remote (official, local) | Not configured: pairing code on TV |
 | Apple TV | Apple TV (official, local) | Not configured: pairing code on TV |
 | Legacy analog DVR + 3 wired cameras | Generic Camera (still image URL, basic auth) | Snapshots only: DVR has no RTSP/ONVIF. Entities `camera.dvr_ch1`, `camera.dvr_ch3`, `camera.dvr_ch4`. HD needs HD-over-coax cameras + hybrid DVR |
-| Tapo porch camera | TP-Link Tapo (official) | Not configured: model + camera account |
+| Tapo pan/tilt camera (Chipstead) | TP-Link Smart Home (official, local) | Connected: `camera.chipstead_live_view`, pan/tilt buttons on the Cameras view. Needed Tapo Lab → Third-Party Compatibility |
 | Blink ×3 | Blink (official, cloud) | Not configured: account sign-in; snapshots/motion/battery only |
+
+## Custom integrations (HACS)
+
+HACS 2.0.5 and the custom `sharkiq` integration were copied by hand into
+`/config/custom_components/` in the `vigilience_ha_config` volume. Deploys never
+touch that directory, and `scripts/backup-config.sh` includes it.
+
+- **Pinned, reviewed code.** `custom_components/sharkiq/.source-commit` records
+  the commit that was reviewed. It only talks to `login.sharkninja.com` and
+  `user-sharkue1.aylanetworks.com` and never sees the Shark password. Read the
+  diff before accepting an update offered by HACS.
+- **Overrides core.** It shadows the official `sharkiq`. When HA ships a
+  `sharkiq` library that signs in again (reportedly 1.5.1+), delete
+  `custom_components/sharkiq`, restart, and switch back to the official one.
 
 ## Adding an integration later
 
