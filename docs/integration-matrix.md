@@ -40,7 +40,7 @@ Home / Cameras views automatically.
 | VeSync switch + 3 outlets | VeSync (official, cloud) | Not configured: VeSync sign-in; confirm models |
 | Meross outdoor switch | none official; evaluate before using a custom component | Not configured: model needed |
 | Kasa kitchen switch (HS200) | TP-Link Smart Home (official, local) | Connected: `switch.kitchen_lights` |
-| Shark robots ×2 | Custom `sharkiq` (dr34ming/ha-sharkiq @ `c2482d7`, cloud) — overrides the official one, whose server-side login Shark's Auth0 blocks ("Suspicious request requires verification") | Installed; not signed in yet. Browser PKCE sign-in, see below |
+| Shark robots ×2 | Custom `sharkiq` (dr34ming/ha-sharkiq @ `c2482d7`, cloud) — overrides the official one, whose server-side login Shark's Auth0 blocks ("Suspicious request requires verification") | Connected: `vacuum.robert`, `vacuum.living_foyer`, battery in `sensor.robert_battery`, `sensor.living_foyer_battery` |
 | Roomba | iRobot Roomba and Braava (official, local) | Not configured: robot (found on the LAN, MQTT port 8883 open) returns a password it then rejects ("Bad username or password"); model needed |
 | Fire TV ×2 | Android TV Remote (official, local) | Not configured: pairing code on TV |
 | Apple TV | Apple TV (official, local) | Not configured: pairing code on TV |
@@ -58,6 +58,15 @@ touch that directory, and `scripts/backup-config.sh` includes it.
   the commit that was reviewed. It only talks to `login.sharkninja.com` and
   `user-sharkue1.aylanetworks.com` and never sees the Shark password. Read the
   diff before accepting an update offered by HACS.
+- **Locally patched for HA 2026.10.** Upstream `vacuum.py` used the removed
+  `VacuumEntityFeature.BATTERY` and failed to load. The flag was dropped and a
+  `sensor.py` battery sensor added; `.source-commit` notes this. Re-apply (or
+  check upstream fixed it) before taking any update.
+- **Sign-in needs a URL-scheme catcher on the Mac.** Shark's login redirects to
+  `com.sharkninja.shark://…?code=`, which a desktop browser silently drops. A
+  tiny AppleScript applet registered for that scheme (`on open location` →
+  clipboard) captures it; paste into the HA dialog within ~30 s. Only needed
+  again on reauth.
 - **Overrides core.** It shadows the official `sharkiq`. When HA ships a
   `sharkiq` library that signs in again (reportedly 1.5.1+), delete
   `custom_components/sharkiq`, restart, and switch back to the official one.
