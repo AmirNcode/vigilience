@@ -546,6 +546,19 @@ views:
               {% endfor %}{% endfor %}
               {% endif %}
       - type: grid
+        cards:
+          - type: heading
+            heading: Kitchen
+            icon: mdi:silverware-fork-knife
+          - type: tile
+            entity: switch.kitchen_lights
+            name: Kitchen lights
+            icon: mdi:ceiling-light
+            state_content: [state, last_changed]
+            features:
+              - type: toggle
+            features_position: inline
+      - type: grid
         column_span: 3
         cards:
           - type: heading
@@ -560,7 +573,9 @@ views:
               | ecobee thermostat | ecobee (official) | {{ 'Connected' if states.climate | count > 0 else '**Not configured** — needs ecobee sign-in' }} |
               | VeSync switch + 3 outlets | VeSync (official) | **Not configured** — needs VeSync sign-in, model check |
               | Meross outdoor switch | to be evaluated | **Not configured** — model unknown |
-              | 2× Shark, 1× Roomba | SharkIQ / iRobot | **Not configured** — models unverified |
+              | Kasa kitchen switch (HS200) | TP-Link Smart Home | {{ 'Connected' if integration_entities('tplink') | select('match','switch\\.kitchen') | list | count > 0 else '**Not configured**' }} |
+              | 2× Shark | Shark IQ | {{ 'Connected' if integration_entities('sharkiq') | count > 0 else '**Not configured** — SharkClean sign-in blocked by Shark' }} |
+              | Roomba | iRobot Roomba and Braava | {{ 'Connected' if integration_entities('roomba') | count > 0 else '**Not configured** — needs HOME-button pairing' }} |
               | 2× Fire TV, Apple TV | Android TV Remote / Apple TV | **Not configured** — pairing on-device |
 
   # ───────────────────────────── CAMERAS ─────────────────────────────
