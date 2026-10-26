@@ -19,7 +19,7 @@ subnet="$(env_value VIG_LAN_SUBNET)"
 
 ports="8200:8299"
 rule=(-p tcp -m conntrack --ctorigdstport "$ports" --ctdir ORIGINAL ! -s "$subnet" -j DROP)
-after_rules=/etc/ufw/after.rules
+after_rules="${HOMELAB_UFW_AFTER_RULES:-/etc/ufw/after.rules}"
 block="# BEGIN homelab-apps
 *filter
 :DOCKER-USER - [0:0]
@@ -31,7 +31,7 @@ if [ "${1:-}" != "--apply" ]; then
   info "Rule: drop TCP to app ports $ports unless the source is in $subnet"
   echo "  sudo iptables -I DOCKER-USER ${rule[*]}"
   if [ -f "$after_rules" ]; then
-    echo "  persisted as this block in $after_rules, then: sudo ufw reload"
+    echo "  if ufw is active, persisted as this block in $after_rules, then: sudo ufw reload"
     printf '%s\n' "$block" | sed 's/^/    /'
   else
     warn "$after_rules not found: the live rule will not survive a reboot"
@@ -40,7 +40,12 @@ if [ "${1:-}" != "--apply" ]; then
   exit 0
 fi
 
-if [ -f "$after_rules" ]; then
+ufw_active=0
+if [ -f "$after_rules" ] && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
+  ufw_active=1
+fi
+
+if [ "$ufw_active" = 1 ]; then
   tmp="$(mktemp)"
   # Drop any previous homelab-apps block, then append the current one.
   sudo sed '/^# BEGIN homelab-apps$/,/^# END homelab-apps$/d' "$after_rules" > "$tmp"
@@ -48,16 +53,19 @@ if [ -f "$after_rules" ]; then
   sudo install -m 640 -o root -g root "$tmp" "$after_rules"
   rm -f "$tmp"
   ok "persisted in $after_rules"
-  # ufw reload applies after.rules, which adds the live rule. (Each reload
-  # appends it again; identical DROP rules are harmless and a reboot leaves one.)
-  if ! sudo iptables -C DOCKER-USER "${rule[@]}" 2>/dev/null; then
-    sudo ufw reload >/dev/null && ok "ufw reloaded"
-  fi
-elif sudo iptables -C DOCKER-USER "${rule[@]}" 2>/dev/null; then
-  ok "live rule already present"
+  # ufw reload applies after.rules; its `:DOCKER-USER - [0:0]` line resets
+  # the chain, so the result is exactly one copy of the rule.
+  sudo ufw reload >/dev/null && ok "ufw reloaded"
 else
-  sudo iptables -I DOCKER-USER "${rule[@]}"
-  ok "live rule inserted into DOCKER-USER"
-  warn "$after_rules not found: the rule will not survive a reboot"
+  if sudo iptables -C DOCKER-USER "${rule[@]}" 2>/dev/null; then
+    ok "live rule already present"
+  else
+    sudo iptables -I DOCKER-USER "${rule[@]}"
+    ok "live rule inserted into DOCKER-USER"
+  fi
+  # Enabling ufw is not done here: its default deny-incoming policy would
+  # also block SSH, Home Assistant and Plex unless they are allowed first.
+  warn "ufw is not active, so this rule will not survive a reboot."
+  warn "To persist it: allow your services in ufw (e.g. sudo ufw allow from $subnet), sudo ufw enable, then re-run with --apply."
 fi
 sudo iptables -S DOCKER-USER | grep -- "--ctorigdstport $ports" || die "rule not active"

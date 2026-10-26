@@ -179,7 +179,8 @@ class RenderCompose(unittest.TestCase):
     def test_render_env_file_optional(self):
         env = "/home/u/.config/homelab/notes.env"
         svc = hd.render_compose(manifest(), LAN, env)["services"]["notes"]
-        self.assertEqual(svc["env_file"], [{"path": env, "required": False}])
+        # Plain path (works on Compose < 2.24); deploy only passes it when the file exists.
+        self.assertEqual(svc["env_file"], [env])
 
     def test_render_data_volume(self):
         doc = hd.render_compose(manifest(data="/app/data"), LAN, None)
@@ -419,6 +420,29 @@ class Deploy(unittest.TestCase):
             rc = hd.deploy(d, "mint", "env", FakeRunner())
         self.assertEqual(rc, 1)
         self.assertIn("index.html", err.getvalue())
+
+
+class StageStatic(unittest.TestCase):
+    def test_stage_static_respects_gitignore_and_skips_symlinks(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as out:
+            d = Path(tmp)
+            (d / "homelab.yaml").write_text("name: site\nport: 8202\nkind: static\ndist: .\n")
+            (d / "index.html").write_text("hi")
+            (d / "css").mkdir()
+            (d / "css" / "a.css").write_text("x")
+            (d / ".gitignore").write_text("secrets.json\n*.pem\n")
+            (d / "secrets.json").write_text("{}")
+            (d / "key.pem").write_text("k")
+            (d / ".env").write_text("A=1")
+            (d / ".npmrc").write_text("//r:_authToken=x")
+            outside = Path(out) / "private.txt"
+            outside.write_text("private")
+            (d / "link.txt").symlink_to(outside)
+            m = hd.load_manifest(d)
+            dest = Path(out) / "site"
+            hd.stage_static(m, d, dest)
+            got = sorted(str(p.relative_to(dest)) for p in dest.rglob("*"))
+            self.assertEqual(got, [".npmrc", "css", "css/a.css", "index.html"])
 
 
 class Main(unittest.TestCase):

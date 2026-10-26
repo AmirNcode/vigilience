@@ -21,7 +21,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import socket
 import subprocess
 import sys
@@ -200,7 +199,7 @@ def render_compose(m: Manifest, lan_ip: str, env_path: str | None) -> dict:
         **svc,
     }
     if env_path:
-        svc["env_file"] = [{"path": env_path, "required": False}]
+        svc["env_file"] = [env_path]
     doc = {"name": f"app-{m.name}", "services": {m.name: svc}}
     if m.data:
         svc["volumes"] = [f"data:{m.data}"]
@@ -255,7 +254,20 @@ def find_port_conflict(m: Manifest, owners: dict[str, int], listening: bool) -> 
 
 DEFAULT_HOST = "mint"
 DEFAULT_ENV_FILE = ".config/vigilience/production.env"
-STAGE_IGNORE = shutil.ignore_patterns(".git", ".homelab", "node_modules", ".env*", "homelab.yaml")
+STAGE_EXCLUDES = ["--exclude=.git", "--exclude=.homelab", "--exclude=node_modules",
+                  "--exclude=.env*", "--exclude=homelab.yaml", "--filter=:- .gitignore"]
+
+
+def stage_static(m: Manifest, app_dir: Path, dest: Path) -> None:
+    """Copy the built site into dest; everything copied is served on the LAN.
+
+    Same exclusions as the source upload (.gitignore, .env*, .git), and no
+    -l: symlinks are skipped, so nothing outside the site can be pulled in.
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["rsync", "-rt", *STAGE_EXCLUDES, "--exclude=.gitignore",
+                    f"{app_dir / m.dist}/", f"{dest}/"],
+                   check=True, capture_output=True, text=True)
 
 
 class Runner:
@@ -383,7 +395,7 @@ def deploy(app_dir: Path, host: str, env_file: str, runner: Runner, force: bool 
             dist = app_dir / m.dist
             if not (dist / "index.html").is_file():
                 return fail(f"{m.dist}/index.html not found (set dist: in homelab.yaml)")
-            shutil.copytree(dist, stage / "static" / "site", ignore=STAGE_IGNORE)
+            stage_static(m, app_dir, stage / "static" / "site")
             (stage / "static" / "Dockerfile").write_text(static_dockerfile(m))
         doc = render_compose(m, facts.lan_ip, env_path(m, facts) if facts.env_exists else None)
         (stage / "compose.json").write_text(json.dumps(doc, indent=2) + "\n")
