@@ -37,3 +37,6 @@ private/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local agent workspaces
+.superpowers/
