@@ -131,5 +131,133 @@ class LoadManifest(unittest.TestCase):
                 hd.load_manifest(Path(tmp))
 
 
+LAN = "192.0.2.10"
+
+
+def manifest(**kw):
+    base = dict(name="notes", port=8201, kind="docker", icon="mdi:application",
+                container_port=3000, health_path="/", memory="512m", data=None,
+                build=None, dist="dist", service="notes")
+    base.update(kw)
+    return hd.Manifest(**base)
+
+
+def cfg_port(published, host_ip=LAN, target=3000):
+    p = {"mode": "ingress", "target": target, "published": str(published), "protocol": "tcp"}
+    if host_ip is not None:
+        p["host_ip"] = host_ip
+    return p
+
+
+class RenderCompose(unittest.TestCase):
+    def test_render_docker(self):
+        doc = hd.render_compose(manifest(), LAN, None)
+        self.assertEqual(doc["name"], "app-notes")
+        svc = doc["services"]["notes"]
+        self.assertEqual(svc["ports"], [{"host_ip": LAN, "published": "8201", "target": 3000, "protocol": "tcp"}])
+        self.assertEqual(svc["labels"], {
+            "homelab.app.name": "notes",
+            "homelab.app.url": "http://192.0.2.10:8201",
+            "homelab.app.icon": "mdi:application",
+            "homelab.app.port": "8201",
+            "homelab.app.health": "/",
+        })
+        self.assertEqual(svc["container_name"], "app-notes")
+        self.assertEqual(svc["image"], "homelab-app-notes:local")
+        self.assertEqual(svc["build"], {"context": "."})
+        self.assertEqual(svc["restart"], "unless-stopped")
+        self.assertEqual(svc["mem_limit"], "512m")
+        self.assertNotIn("env_file", svc)
+        self.assertNotIn("volumes", doc)
+
+    def test_render_env_file_optional(self):
+        env = "/home/u/.config/homelab/notes.env"
+        svc = hd.render_compose(manifest(), LAN, env)["services"]["notes"]
+        self.assertEqual(svc["env_file"], [{"path": env, "required": False}])
+
+    def test_render_data_volume(self):
+        doc = hd.render_compose(manifest(data="/app/data"), LAN, None)
+        self.assertEqual(doc["services"]["notes"]["volumes"], ["data:/app/data"])
+        self.assertEqual(doc["volumes"], {"data": {}})
+
+    def test_render_static(self):
+        m = manifest(name="site", kind="static", container_port=80, service="site")
+        svc = hd.render_compose(m, LAN, None)["services"]["site"]
+        self.assertEqual(svc["build"], {"context": ".homelab/static"})
+        self.assertEqual(svc["ports"][0]["target"], 80)
+        df = hd.static_dockerfile(m)
+        self.assertTrue(df.startswith("FROM nginx:1.27.3-alpine"))
+        self.assertIn("COPY site/ /usr/share/nginx/html/", df)
+
+    def test_render_compose_override_only_touches_service(self):
+        m = manifest(kind="compose", service="web")
+        doc = hd.render_compose(m, LAN, "/x.env")
+        self.assertEqual(set(doc), {"services"})
+        self.assertEqual(set(doc["services"]), {"web"})
+        self.assertEqual(set(doc["services"]["web"]), {"ports", "restart", "mem_limit", "labels"})
+
+
+class CheckRendered(unittest.TestCase):
+    m = manifest(kind="compose", service="web")
+
+    def cfg(self, **services):
+        return {"name": "app-notes", "services": services}
+
+    def test_check_ok_for_named_volume_db(self):
+        cfg = self.cfg(
+            web={"ports": [cfg_port(8201)]},
+            db={"volumes": [{"type": "volume", "source": "pg", "target": "/var/lib/postgresql/data"}]},
+        )
+        self.assertEqual(hd.check_rendered(cfg, self.m, LAN), [])
+
+    def test_check_rejects_extra_port(self):
+        cfg = self.cfg(web={"ports": [cfg_port(8201)]}, db={"ports": [cfg_port(5432, target=5432)]})
+        errs = hd.check_rendered(cfg, self.m, LAN)
+        self.assertTrue(any("db" in e and "5432" in e for e in errs), errs)
+
+    def test_check_rejects_wildcard_bind(self):
+        for host_ip in (None, "0.0.0.0", ""):
+            cfg = self.cfg(web={"ports": [cfg_port(8201, host_ip=host_ip)]})
+            errs = hd.check_rendered(cfg, self.m, LAN)
+            self.assertTrue(any("LAN IP" in e for e in errs), (host_ip, errs))
+
+    def test_check_rejects_second_port_on_service(self):
+        cfg = self.cfg(web={"ports": [cfg_port(8201), cfg_port(8202)]})
+        self.assertTrue(hd.check_rendered(cfg, self.m, LAN))
+
+    def test_check_rejects_bind_mount(self):
+        cfg = self.cfg(web={"ports": [cfg_port(8201)],
+                            "volumes": [{"type": "bind", "source": "/home/linus/apps/notes/data", "target": "/data"}]})
+        errs = hd.check_rendered(cfg, self.m, LAN)
+        self.assertTrue(any("bind-mounts /home/linus/apps/notes/data" in e for e in errs), errs)
+
+    def test_check_rejects_privileged(self):
+        cfg = self.cfg(web={"ports": [cfg_port(8201)], "privileged": True})
+        self.assertTrue(any("privileged" in e for e in hd.check_rendered(cfg, self.m, LAN)))
+
+    def test_check_rejects_host_network(self):
+        cfg = self.cfg(web={"ports": [cfg_port(8201)]}, db={"network_mode": "host"})
+        self.assertTrue(any("host" in e for e in hd.check_rendered(cfg, self.m, LAN)))
+
+    def test_check_missing_service(self):
+        errs = hd.check_rendered(self.cfg(api={}), self.m, LAN)
+        self.assertTrue(any("service web not found" in e for e in errs), errs)
+
+
+class PortConflict(unittest.TestCase):
+    def test_port_conflict_other_app(self):
+        msg = hd.find_port_conflict(manifest(), {"todo": 8201}, True)
+        self.assertIn("todo", msg)
+
+    def test_port_redeploy_same_app_ok(self):
+        self.assertIsNone(hd.find_port_conflict(manifest(), {"notes": 8201}, True))
+
+    def test_port_taken_by_non_app(self):
+        self.assertIn("in use", hd.find_port_conflict(manifest(), {}, True))
+
+    def test_port_free(self):
+        self.assertIsNone(hd.find_port_conflict(manifest(), {"todo": 8202}, False))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

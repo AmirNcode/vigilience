@@ -147,3 +147,96 @@ def load_manifest(app_dir: Path) -> Manifest:
                     container_port=container_port, health_path=health_path,
                     memory=memory, data=data, build=raw.get("build"), dist=dist,
                     service=raw.get("service", name))
+
+
+# --- compose rendering and invariants ---------------------------------------
+
+STATIC_BASE_IMAGE = "nginx:1.27.3-alpine"
+
+
+def labels(m: Manifest, lan_ip: str) -> dict[str, str]:
+    # Read by Vigilience (probe.sh apps). Never put secrets here: Home
+    # Assistant can read every container's labels.
+    return {
+        "homelab.app.name": m.name,
+        "homelab.app.url": f"http://{lan_ip}:{m.port}",
+        "homelab.app.icon": m.icon,
+        "homelab.app.port": str(m.port),
+        "homelab.app.health": m.health_path,
+    }
+
+
+def render_compose(m: Manifest, lan_ip: str, env_path: str | None) -> dict:
+    """Compose document for .homelab/compose.json.
+
+    docker/static: the whole project. compose: an override merged after the
+    app's own compose file, touching only the published service.
+    Compose runs with --project-directory ~/apps/<name>, so paths are
+    relative to the app's source folder.
+    """
+    svc = {
+        "ports": [{"host_ip": lan_ip, "published": str(m.port),
+                   "target": m.container_port, "protocol": "tcp"}],
+        "restart": "unless-stopped",
+        "mem_limit": m.memory,
+        "labels": labels(m, lan_ip),
+    }
+    if m.kind == "compose":
+        return {"services": {m.service: svc}}
+
+    svc = {
+        "build": {"context": ".homelab/static" if m.kind == "static" else "."},
+        "image": f"homelab-app-{m.name}:local",
+        "container_name": f"app-{m.name}",
+        **svc,
+    }
+    if env_path:
+        svc["env_file"] = [{"path": env_path, "required": False}]
+    doc = {"name": f"app-{m.name}", "services": {m.name: svc}}
+    if m.data:
+        svc["volumes"] = [f"data:{m.data}"]
+        doc["volumes"] = {"data": {}}
+    return doc
+
+
+def static_dockerfile(m: Manifest) -> str:
+    # Files are baked into the image: a bind mount from /home/linus (ecryptfs)
+    # would be missing after an unattended reboot.
+    return (f"FROM {STATIC_BASE_IMAGE}\n"
+            f"COPY site/ /usr/share/nginx/html/\n")
+
+
+def check_rendered(cfg: dict, m: Manifest, lan_ip: str) -> list[str]:
+    """Violations in `docker compose config --format json` output (merged)."""
+    services = cfg.get("services") or {}
+    errs = []
+    if m.service not in services:
+        errs.append(f"service {m.service} not found in compose.yaml (set service: in homelab.yaml)")
+    for name, svc in sorted(services.items()):
+        if svc.get("privileged"):
+            errs.append(f"{name} is privileged")
+        if svc.get("network_mode") == "host":
+            errs.append(f"{name} uses network_mode: host, which bypasses LAN-only publishing")
+        ports = svc.get("ports") or []
+        for p in ports:
+            published = p.get("published")
+            if name != m.service:
+                errs.append(f"{name} publishes port {published}; only {m.service} may publish (remove ports: from compose.yaml)")
+            elif str(published) != str(m.port):
+                errs.append(f"{name} publishes port {published}; only {m.port} from homelab.yaml is allowed (remove ports: from compose.yaml)")
+            if p.get("host_ip") != lan_ip:
+                errs.append(f"{name} port {published} is not bound to the LAN IP")
+        for v in svc.get("volumes") or []:
+            if v.get("type") == "bind":
+                errs.append(f"{name} bind-mounts {v.get('source')}; use a named volume")
+    return errs
+
+
+def find_port_conflict(m: Manifest, owners: dict[str, int], listening: bool) -> str | None:
+    """Why m.port can't be used, or None. owners: deployed app name -> port."""
+    for other, port in sorted(owners.items()):
+        if port == m.port and other != m.name:
+            return f"port {m.port} is already used by app '{other}' (pick another in {PORT_MIN}-{PORT_MAX}; see homelab-deploy ls)"
+    if listening and owners.get(m.name) != m.port:
+        return f"port {m.port} is in use on the server by something that is not a homelab app"
+    return None
