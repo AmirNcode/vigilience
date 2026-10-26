@@ -8,6 +8,12 @@
 | `glances` | `nicolargo/glances:4.5.8` | host, `pid: host` | read-only bind of the media drive, empty SSD probe volume; **no Docker access** | Host CPU/RAM/load/sensors/filesystems/network |
 | `docker-proxy` | `wollomatic/socket-proxy:1.13.1` | host, listens and accepts on `127.0.0.1` only | runs as `nobody:docker`, `cap_drop: ALL`, read-only, no-new-privileges; socket mounted read-only | Anchored allowlist: `GET /containers/json` and `GET /containers/<id>/stats` only |
 
+Self-hosted apps (see [deploying-apps.md](deploying-apps.md)) run as
+separate Compose projects `app-<name>`, built on the server from source in
+`~/apps/<name>/`, published only on the server's LAN IP (ports 8200–8299)
+and labelled `homelab.app.*`. `probe.sh apps` reads those labels from the
+same container-list call and probes each app over HTTP (`sensor.vig_apps`).
+
 Compose project name: `vigilience`. Immich and the host-installed Plex are not
 referenced by Compose in any way.
 

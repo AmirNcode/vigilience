@@ -18,6 +18,7 @@ private values and runtime state live only on the server.
 | View | Contents |
 |---|---|
 | **Overview** | Health headline, status strip (internet, server, Immich, Plex, WD drive, backups), "needs attention" list, latency + CPU/RAM 24 h charts, storage gauges, quick links, recent activity |
+| **Apps** | Your self-hosted apps (deployed with `homelab-deploy`), each with link, up/down and response time — discovered automatically |
 | **Server** | CPU usage/temp/frequency/load, memory/swap, SSD + WD drive capacity and mount state, Docker containers (status, uptime, CPU, RAM), service response times, 7–30 day charts |
 | **Network** | Internet vs gateway reachability (tells ISP outage from local fault), latency and packet loss, 7-day uptime, HP Wi-Fi throughput |
 | **Smart Home / Cameras** | Integration status; populates once devices are added in the HA UI. No fake controls or feeds |
@@ -67,13 +68,24 @@ pin-gate/                        PIN reverse proxy (stdlib Python) + Dockerfile
 config/homeassistant/
   configuration.yaml             managed HA config
   packages/                      sensors, health logic, alerts
-  dashboards/vigilience.yaml     the dashboard (7 views)
+  dashboards/vigilience.yaml     the dashboard (8 views)
   themes/vigilience.yaml         dark theme
   scripts/probe.sh               ping/HTTP probe helper
 scripts/                         preflight, deploy, verify, backup, restore, rollback
+  homelab_deploy.py              homelab-deploy: ship your own apps from the Mac
+  homelab-firewall.sh            LAN-only rule for app ports 8200-8299
+skills/homelab-deploy/           Claude Code skill pointing agents at the deploy guide
+examples/hello-static/           smallest deployable app
 tests/                           secret scan, compose invariants, HA check_config, probe tests
 docs/                            architecture, deployment, security, integrations, troubleshooting
 ```
+
+## Hosting your own apps
+
+Apps you build can run on the same server, LAN-only, deployed from the Mac
+with one command (`homelab-deploy` in the app folder). Each app needs a
+small `homelab.yaml`; it then shows up in the **Apps** view by itself.
+Guide (also for coding agents): [docs/deploying-apps.md](docs/deploying-apps.md).
 
 ## Development
 

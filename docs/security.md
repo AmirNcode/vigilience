@@ -33,6 +33,22 @@
     login_attempts_threshold: 10
   ```
 
+## Self-hosted apps
+
+- Apps deployed with `homelab-deploy` publish one port each (8200–8299) on
+  the server's LAN IP only; the tool refuses extra ports, wildcard binds,
+  host networking, `privileged` and bind mounts.
+- `scripts/homelab-firewall.sh --apply` adds a `DOCKER-USER` rule dropping
+  traffic to those ports from outside `VIG_LAN_SUBNET` (Docker-published
+  ports bypass ufw's INPUT rules). It is persistent only when ufw is
+  enabled.
+- Apps have **no authentication** unless they bring their own; LAN-only
+  reachability is the gate. Anyone on the home Wi-Fi can open them.
+- Home Assistant reads every container's labels; `homelab.app.*` labels
+  hold only name, URL, icon, port and health path. Secrets go in
+  `~/.config/homelab/<name>.env` on the server (mode 600), never in labels
+  or the app's repo.
+
 ## PIN gate
 
 | Concern | Control |
