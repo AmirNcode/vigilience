@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-cfg="$(DOCKER_GID=999 docker compose --project-name vigilience --env-file .env.example -f compose.yaml config --format json)"
+cfg="$(DOCKER_GID=999 PIN_GATE_PIN_HASH=pbkdf2:test PIN_GATE_SECRET=test docker compose --project-name vigilience --env-file .env.example -f compose.yaml config --format json)"
 echo "PASS compose config renders"
 
 python3 - "$cfg" <<'EOF'
@@ -15,6 +15,10 @@ for name, svc in s.items():
     if svc.get("privileged"):
         errs.append(f"{name}: privileged")
     img = svc.get("image", "")
+    if "build" in svc:
+        # Locally built: the Dockerfile's base image must be pinned instead.
+        df = open(svc["build"]["context"] + "/Dockerfile").read()
+        img = [l.split()[1] for l in df.splitlines() if l.startswith("FROM ")][0]
     if img.endswith(":latest") or ":" not in img.split("/")[-1]:
         errs.append(f"{name}: image not pinned ({img})")
     for p in svc.get("ports", []):
@@ -42,6 +46,9 @@ if "DOCKER_HOST" in s["glances"].get("environment", {}):
 media = [v for v in s["glances"]["volumes"] if v.get("target") == "/mnt/media"][0]
 if not media.get("read_only"):
     errs.append("glances: media mount not read-only")
+pg = s["pin-gate"]
+if "ALL" not in pg.get("cap_drop", []) or not pg.get("read_only") or pg.get("volumes"):
+    errs.append("pin-gate: not cap_drop ALL + read_only without mounts")
 if c.get("name") != "vigilience":
     errs.append("project name is not vigilience")
 if errs:

@@ -9,7 +9,7 @@ alias vc='docker compose --project-name vigilience --env-file ~/.config/vigilien
 
 | Symptom | Check | Fix |
 |---|---|---|
-| Dashboard won't load | `vc ps`; `curl -I http://127.0.0.1:8123` | `vc up -d`; `docker logs --tail 100 vigilience-homeassistant` |
+| Dashboard won't load | `vc ps`; `curl -I http://127.0.0.1:8124` (HA) and `:8123` (PIN gate); `docker logs vigilience-pin-gate` | `vc up -d`; `docker logs --tail 100 vigilience-homeassistant` |
 | All server metrics *Unavailable*, "metrics not collected" | `curl -s 127.0.0.1:61208/api/4/quicklook` | `vc restart glances`; `docker logs vigilience-glances` |
 | Containers table empty | `curl -s 127.0.0.1:2375/containers/json \| head -c 200` | `vc restart docker-proxy`; check `DOCKER_GID` matches `getent group docker` |
 | WD drive "not mounted" but it is | `findmnt /mnt/media`; `curl -s 127.0.0.1:61208/api/4/fs` | Drive was mounted after Glances started with non-shared propagation: `vc restart glances` |

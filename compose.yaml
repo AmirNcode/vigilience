@@ -49,6 +49,28 @@ services:
       - glances
       - docker-proxy
 
+  pin-gate:
+    # PIN in front of Home Assistant. Owns :8123 on the LAN and forwards to
+    # Home Assistant, which listens on 127.0.0.1:8124 (set once in the HA UI,
+    # see docs/security.md). Standard-library Python; built locally from a
+    # pinned base image.
+    build: ./pin-gate
+    image: vigilience-pin-gate:local
+    container_name: vigilience-pin-gate
+    network_mode: host
+    environment:
+      PIN_GATE_PIN_HASH: ${PIN_GATE_PIN_HASH:?run scripts/set-pin.sh to set the dashboard PIN}
+      PIN_GATE_SECRET: ${PIN_GATE_SECRET:?run scripts/set-pin.sh to set the dashboard PIN}
+      PIN_GATE_PORT: "8123"
+      PIN_GATE_UPSTREAM: 127.0.0.1:${HA_INTERNAL_PORT:-8124}
+      PIN_GATE_TTL: "86400"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    mem_limit: 64m
+    logging: *logging
+
   glances:
     image: nicolargo/glances:${GLANCES_VERSION:-4.5.8}
     container_name: vigilience-glances

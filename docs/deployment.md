@@ -29,6 +29,12 @@ Set `DOCKER_GID` (`getent group docker | cut -d: -f3`), `VIG_GATEWAY_HOST`
 (router LAN IP) and the quick-link URLs (`VIG_IMMICH_URL`, `VIG_PLEX_URL`)
 as you reach them from your phone.
 
+Set the dashboard PIN (6+ digits; only its hash is stored):
+
+```bash
+cd ~/vigilience && ./scripts/set-pin.sh
+```
+
 ```bash
 cd ~/vigilience
 ./scripts/preflight.sh      # read-only checks; must end with "preflight passed"
@@ -45,6 +51,29 @@ Then, from a browser on the LAN, open `http://<server-ip>:8123`:
 
 **iPhone:** open the URL in Safari → Share → *Add to Home Screen*. Works on
 the LAN and through the home VPN.
+
+### Move Home Assistant behind the PIN gate (once)
+
+Home Assistant 2026.x manages HTTP settings in the UI, not YAML, so this is
+one manual step. Until it is done `pin-gate` keeps retrying to bind :8123
+and `verify.sh` fails its PIN checks.
+
+1. Open `http://<server-ip>:8123` (still Home Assistant directly), sign in.
+2. **Settings → System → Network → HTTP server**:
+   - Server port: `8124`
+   - Listen addresses: `127.0.0.1`
+   - Trust X-Forwarded-For: on; Trusted proxies: `127.0.0.1`
+3. Save and restart Home Assistant. Within a few seconds the gate takes
+   over :8123; reload the page and enter the PIN.
+4. `./scripts/verify.sh` should now pass. The Companion app keeps the same
+   URL (`:8123`); open it once and enter the PIN in its webview.
+
+Bypass the gate for recovery (e.g. forgotten PIN before running
+`set-pin.sh` again): `ssh -L 8124:127.0.0.1:8124 <server>` and open
+`http://localhost:8124`.
+
+Change the PIN any time with `./scripts/set-pin.sh` (signs out every
+device). Lock the current device: open `/__vig_pin/lock`.
 
 ## 2. Routine deployment
 

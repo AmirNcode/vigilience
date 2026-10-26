@@ -14,8 +14,13 @@
 - The dashboard is Home Assistant on port 8123, reachable on the home LAN and
   over the existing home VPN. Nothing is port-forwarded or tunnelled to the
   internet by Vigilience.
-- Every view requires a Home Assistant login. Use a unique strong password;
-  enable TOTP MFA in your profile.
+- **PIN gate first.** `pin-gate` owns port 8123 and Home Assistant listens
+  only on `127.0.0.1:8124`. A browser must enter the dashboard PIN (6+
+  digits) before anything — including the Home Assistant login page —
+  reaches Home Assistant. The device is then remembered for 24 hours
+  (signed `HttpOnly` cookie, fixed expiry); `/__vig_pin/lock` forgets it.
+- Every view still requires a Home Assistant login after the PIN. Use a
+  unique strong password; enable TOTP MFA in your profile.
 - If more people get access, create **non-admin** users. Home Assistant
   does not offer per-entity read-only permissions; non-admins can still
   operate devices shown on dashboards but cannot change configuration.
@@ -27,6 +32,18 @@
     ip_ban_enabled: true
     login_attempts_threshold: 10
   ```
+
+## PIN gate
+
+| Concern | Control |
+|---|---|
+| PIN storage | Only a PBKDF2-SHA256 hash (600k iterations, random salt) in the server env file, written by `scripts/set-pin.sh`. Changing the PIN rotates the cookie signing key, so every device must re-enter it. |
+| Brute force | 5 wrong PINs per client IP lock that IP for 15 min; 30 wrong PINs across all clients in an hour lock everyone out for the rest of that hour. 1 s delay per wrong PIN. Attempts are logged (`docker logs vigilience-pin-gate`). |
+| What passes without the PIN | Requests Home Assistant authenticates with a token itself: `/api/*` (REST, `/api/websocket`, webhooks with secret ids, camera/HLS with signed URLs) and `/auth/token`, `/auth/revoke`. This keeps the Companion app's background traffic working. Consequence: anyone already holding a valid HA token (e.g. extracted from an unlocked device) does not need the PIN. |
+| What needs the PIN | Everything else: the frontend, `/auth/authorize` and the login flow (so HA passwords cannot be guessed without the PIN), static files. |
+| Bypass attempts | Paths with `.`/`..` segments (also percent-encoded), `//` or `\` are rejected; one upstream connection per request and exactly `Content-Length` body bytes forwarded, so a second request cannot be smuggled behind an exempt one; only a real websocket handshake to `/api/websocket` may upgrade without the cookie; client `X-Forwarded-*`/`Forwarded` headers are replaced. Service-worker scripts return 404 so browsers cannot serve a cached UI offline. |
+| Transport | Plain HTTP on the LAN/VPN like before; the cookie is not marked `Secure`. Anyone who can sniff the LAN can capture it (same as the HA session). |
+| Container | Standard-library Python, non-root (`nobody`), read-only root fs, all capabilities dropped, no mounts; fails to start if no PIN is set. |
 
 ## Least privilege
 

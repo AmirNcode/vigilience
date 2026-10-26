@@ -42,7 +42,7 @@ else
 fi
 
 info "Pulling pinned images"
-compose pull --quiet
+compose pull --quiet --ignore-buildable
 
 # Fingerprint the managed config before/after sync to decide on a restart.
 fingerprint() {
@@ -55,7 +55,7 @@ after="$(fingerprint)"
 
 info "Starting/updating Vigilience containers"
 was_running="$(docker inspect -f '{{.State.Running}}' vigilience-homeassistant 2>/dev/null || echo false)"
-compose up -d --remove-orphans
+compose up -d --build --remove-orphans
 if [ "$was_running" = true ] && [ "$before" != "$after" ]; then
   info "Managed config changed; restarting Home Assistant"
   compose restart homeassistant
@@ -65,4 +65,4 @@ mkdir -p "$(dirname "$STATE_FILE")"
 printf '%s deploy %s -> %s\n' "$(date -Iseconds)" "$prev" "$new" >> "$STATE_FILE"
 
 "$REPO_DIR/scripts/verify.sh"
-ok "Deployed ${new:0:7}. Dashboard: http://<server-lan-ip>:8123/vigilience-hq"
+ok "Deployed ${new:0:7}. Dashboard: http://<server-lan-ip>:8123/vigilience-hq (PIN, then HA login)"

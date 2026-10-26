@@ -30,7 +30,9 @@ Every value is measured. Anything not integrated is labelled
 ## Architecture
 
 ```
-iPhone / Mac ──LAN or home VPN──► Home Assistant :8123  (login required)
+iPhone / Mac ──LAN or home VPN──► PIN gate :8123  (6+ digit PIN, remembered 24 h)
+                                    ▼
+                                  Home Assistant 127.0.0.1:8124  (login required)
                                     │  YAML packages: rest + command_line sensors
                                     ├─► Glances API      127.0.0.1:61208 (host metrics)
                                     ├─► socket proxy     127.0.0.1:2375  (GET container list + stats only)
@@ -48,16 +50,19 @@ git clone https://github.com/AmirNcode/vigilience.git ~/vigilience
 mkdir -p ~/.config/vigilience
 install -m 600 ~/vigilience/.env.example ~/.config/vigilience/production.env
 nano ~/.config/vigilience/production.env      # set VIG_* values
-cd ~/vigilience && ./scripts/deploy.sh
+cd ~/vigilience && ./scripts/set-pin.sh       # dashboard PIN
+./scripts/deploy.sh
 ```
 
-Then open `http://<server-ip>:8123`, create the admin account, and choose
+Then open `http://<server-ip>:8123`, create the admin account, move Home
+Assistant behind the PIN gate (one UI step, see the runbook), and choose
 **Vigilience** in the sidebar. Full runbook: [docs/deployment.md](docs/deployment.md).
 
 ## Repository layout
 
 ```
-compose.yaml                     Home Assistant, Glances, socket proxy
+compose.yaml                     PIN gate, Home Assistant, Glances, socket proxy
+pin-gate/                        PIN reverse proxy (stdlib Python) + Dockerfile
 .env.example                     template for the server-only env file
 config/homeassistant/
   configuration.yaml             managed HA config

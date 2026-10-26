@@ -18,6 +18,11 @@ docker info >/dev/null 2>&1 && ok "docker daemon reachable as $(id -un)" || crit
 if [ -f "$ENV_FILE" ]; then
   mode="$(stat -c %a "$ENV_FILE" 2>/dev/null || stat -f %Lp "$ENV_FILE")"
   [ "$mode" = "600" ] && ok "env file present, mode 600" || warn "env file mode is $mode (expected 600)"
+  if [ -n "$(env_value PIN_GATE_PIN_HASH)" ] && [ -n "$(env_value PIN_GATE_SECRET)" ]; then
+    ok "dashboard PIN configured"
+  else
+    critical "dashboard PIN not set (run scripts/set-pin.sh)"
+  fi
 else
   critical "env file missing: $ENV_FILE"
 fi
@@ -50,7 +55,7 @@ avail=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
 
 # Port conflicts (ignore ports already held by our own containers)
 ours="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" -q | wc -l)"
-for p in 8123 "$(env_value GLANCES_PORT 61208)" "$(env_value DOCKER_PROXY_PORT 2375)"; do
+for p in 8123 "$(env_value HA_INTERNAL_PORT 8124)" "$(env_value GLANCES_PORT 61208)" "$(env_value DOCKER_PROXY_PORT 2375)"; do
   if ss -ltn "sport = :$p" 2>/dev/null | grep -q LISTEN && [ "$ours" -eq 0 ]; then
     critical "port $p already in use by something else"
   else
