@@ -3,7 +3,11 @@
 Run via tests/homelab-deploy-test.sh (stdlib only, no Docker or SSH needed).
 """
 
+import contextlib
+import io
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -257,6 +261,176 @@ class PortConflict(unittest.TestCase):
 
     def test_port_free(self):
         self.assertIsNone(hd.find_port_conflict(manifest(), {"todo": 8202}, False))
+
+
+def done(stdout="", rc=0, stderr=""):
+    return subprocess.CompletedProcess([], rc, stdout, stderr)
+
+
+class FakeRunner:
+    """Records commands; answers the remote facts / config / health calls."""
+
+    def __init__(self, facts=None, config=None, health="200", up_rc=0):
+        self.calls = []
+        self.facts = {"HOME": "/home/u", "LAN_IP": LAN} if facts is None else facts
+        self.config = config
+        self.health = health
+        self.up_rc = up_rc
+
+    def run(self, argv, *, input=None, check=True, cwd=None):
+        self.calls.append(("run", argv, input))
+        last = argv[-1]
+        if input and "OWNER=" in input:
+            return done("".join(f"{k}={v}\n" for k, v in self.facts.items()))
+        if "config --format json" in last:
+            return done(json.dumps(self.config))
+        if "curl" in last:
+            return done(self.health)
+        return done()
+
+    def stream(self, argv, *, cwd=None):
+        self.calls.append(("stream", argv, None))
+        return self.up_rc if " up " in argv[-1] else 0
+
+    def kinds(self):
+        out = []
+        for kind, argv, inp in self.calls:
+            last = argv[-1]
+            if argv[0] == "rsync":
+                out.append("rsync-homelab" if "/.homelab/" in argv[-2] else "rsync-source")
+            elif inp and "OWNER=" in inp:
+                out.append("facts")
+            elif "mkdir" in last:
+                out.append("mkdir")
+            elif "config --format json" in last:
+                out.append("config")
+            elif " up " in last:
+                out.append("up")
+            elif "curl" in last:
+                out.append("health")
+            else:
+                out.append(last)
+        return out
+
+
+def ok_config(service="notes", port=8201):
+    return {"name": "app-notes", "services": {service: {"ports": [cfg_port(port)]}}}
+
+
+class Deploy(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = app_dir(self.tmp.name, DOCKER, ["Dockerfile"])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def deploy(self, runner, force=False):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = hd.deploy(self.dir, "mint", ".config/vigilience/production.env", runner, force=force)
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_rsync_excludes_secrets(self):
+        args = hd.rsync_args(self.dir, "mint", "apps/notes/")
+        self.assertIn("--exclude=.env*", args)
+        self.assertIn("--exclude=.git", args)
+        self.assertEqual(args[-1], "mint:apps/notes/")
+        self.assertTrue(args[-2].endswith("/"))
+
+    def test_deploy_happy_path_order(self):
+        r = FakeRunner(config=ok_config())
+        rc, out, err = self.deploy(r)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(r.kinds(), ["facts", "mkdir", "rsync-source", "rsync-homelab", "config", "up", "health"])
+        self.assertIn("http://192.0.2.10:8201", out)
+
+    def test_deploy_refuses_other_source(self):
+        r = FakeRunner(facts={"HOME": "/home/u", "LAN_IP": LAN, "SOURCE": "otherhost:/x"}, config=ok_config())
+        rc, out, err = self.deploy(r)
+        self.assertEqual(rc, 1)
+        self.assertIn("otherhost:/x", err)
+        self.assertIn("--force", err)
+        self.assertNotIn("rsync-source", r.kinds())
+
+    def test_deploy_force_replaces(self):
+        r = FakeRunner(facts={"HOME": "/home/u", "LAN_IP": LAN, "SOURCE": "otherhost:/x"}, config=ok_config())
+        rc, out, err = self.deploy(r, force=True)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("up", r.kinds())
+
+    def test_deploy_missing_lan_ip(self):
+        rc, out, err = self.deploy(FakeRunner(facts={"HOME": "/home/u"}))
+        self.assertEqual(rc, 1)
+        self.assertIn("VIG_LAN_IP", err)
+
+    def test_deploy_port_conflict(self):
+        r = FakeRunner(facts={"HOME": "/home/u", "LAN_IP": LAN, "OWNER": "todo=8201", "LISTENING": "1"})
+        rc, out, err = self.deploy(r)
+        self.assertEqual(rc, 1)
+        self.assertIn("todo", err)
+        self.assertEqual(r.kinds(), ["facts"])
+
+    def test_deploy_reports_check_violations(self):
+        cfg = ok_config()
+        cfg["services"]["db"] = {"ports": [cfg_port(5432, host_ip="0.0.0.0", target=5432)]}
+        r = FakeRunner(config=cfg)
+        rc, out, err = self.deploy(r)
+        self.assertEqual(rc, 1)
+        self.assertIn("5432", err)
+        self.assertNotIn("up", r.kinds())
+
+    def test_deploy_health_fail_hint(self):
+        rc, out, err = self.deploy(FakeRunner(config=ok_config(), health="000"))
+        self.assertEqual(rc, 1)
+        self.assertIn("0.0.0.0:3000", err)
+
+    def test_deploy_up_failure(self):
+        rc, out, err = self.deploy(FakeRunner(config=ok_config(), up_rc=17))
+        self.assertEqual(rc, 1)
+
+    def test_env_file_passed_when_present(self):
+        r = FakeRunner(facts={"HOME": "/home/u", "LAN_IP": LAN, "ENV_EXISTS": "1"}, config=ok_config())
+        rc, _, err = self.deploy(r)
+        self.assertEqual(rc, 0, err)
+        up = [a for k, a, _ in r.calls if k == "stream"][0][-1]
+        self.assertIn("--env-file /home/u/.config/homelab/notes.env", up)
+
+    def test_static_stages_site_without_source_rsync(self):
+        d = Path(self.tmp.name) / "site"
+        (d / "dist").mkdir(parents=True)
+        (d / "homelab.yaml").write_text("name: site\nport: 8202\nkind: static\n")
+        (d / "dist" / "index.html").write_text("hi")
+        r = FakeRunner(config=ok_config("site", 8202))
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = hd.deploy(d, "mint", "env", r)
+        self.assertEqual(rc, 0, err.getvalue())
+        self.assertNotIn("rsync-source", r.kinds())
+
+    def test_static_missing_index(self):
+        d = Path(self.tmp.name) / "site"
+        d.mkdir()
+        (d / "homelab.yaml").write_text("name: site\nport: 8202\nkind: static\n")
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = hd.deploy(d, "mint", "env", FakeRunner())
+        self.assertEqual(rc, 1)
+        self.assertIn("index.html", err.getvalue())
+
+
+class Main(unittest.TestCase):
+    def test_down_rejects_bad_name(self):
+        r = FakeRunner()
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(hd.main(["down", "x;rm"], runner=r), 1)
+        self.assertEqual(r.calls, [])
+
+    def test_down_uses_project_name(self):
+        r = FakeRunner()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(hd.main(["down", "notes"], runner=r), 0)
+        self.assertIn("docker compose -p app-notes down", r.calls[0][1][-1])
 
 
 if __name__ == "__main__":

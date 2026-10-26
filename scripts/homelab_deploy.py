@@ -17,7 +17,15 @@ Standard library only. Guide: docs/deploying-apps.md.
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import shlex
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -240,3 +248,226 @@ def find_port_conflict(m: Manifest, owners: dict[str, int], listening: bool) -> 
     if listening and owners.get(m.name) != m.port:
         return f"port {m.port} is in use on the server by something that is not a homelab app"
     return None
+
+
+# --- talking to the server ---------------------------------------------------
+
+DEFAULT_HOST = "mint"
+DEFAULT_ENV_FILE = ".config/vigilience/production.env"
+STAGE_IGNORE = shutil.ignore_patterns(".git", ".homelab", "node_modules", ".env*", "homelab.yaml")
+
+
+class Runner:
+    """Runs local commands (ssh/rsync/build). Tests substitute a fake."""
+
+    def run(self, argv: list[str], *, input: str | None = None, check: bool = True,
+            cwd: Path | None = None) -> subprocess.CompletedProcess:
+        return subprocess.run(argv, input=input, check=check, cwd=cwd,
+                              text=True, capture_output=True)
+
+    def stream(self, argv: list[str], *, cwd: Path | None = None) -> int:
+        return subprocess.run(argv, cwd=cwd).returncode
+
+
+@dataclass
+class RemoteFacts:
+    home: str
+    lan_ip: str
+    owners: dict[str, int]
+    listening: bool
+    source: str | None
+    env_exists: bool
+
+
+FACTS_SCRIPT = r"""
+echo "HOME=$HOME"
+f="$HOME/@ENV_FILE@"
+[ -f "$f" ] && echo "LAN_IP=$(sed -n 's/^VIG_LAN_IP=//p' "$f" | tail -n 1)"
+docker ps -a --filter label=homelab.app.name \
+  --format 'OWNER={{.Label "homelab.app.name"}}={{.Label "homelab.app.port"}}'
+ss -ltnH "sport = :@PORT@" 2>/dev/null | grep -q . && echo LISTENING=1
+s="$HOME/apps/@NAME@/.homelab/source"
+[ -f "$s" ] && echo "SOURCE=$(cat "$s")"
+[ -f "$HOME/.config/homelab/@NAME@.env" ] && echo ENV_EXISTS=1
+exit 0
+"""
+
+
+def remote_facts(runner: Runner, host: str, env_file: str, m: Manifest) -> RemoteFacts:
+    script = (FACTS_SCRIPT.replace("@ENV_FILE@", env_file)
+              .replace("@PORT@", str(m.port)).replace("@NAME@", m.name))
+    out = runner.run(["ssh", host, "sh", "-s"], input=script).stdout
+    vals: dict[str, str] = {}
+    owners: dict[str, int] = {}
+    for line in out.splitlines():
+        key, _, value = line.partition("=")
+        if key == "OWNER":
+            app, _, port = value.partition("=")
+            if app and port.isdigit():
+                owners[app] = int(port)
+        else:
+            vals[key] = value.strip()
+    return RemoteFacts(home=vals.get("HOME", ""), lan_ip=vals.get("LAN_IP", "").strip("'\""),
+                       owners=owners, listening="LISTENING" in vals,
+                       source=vals.get("SOURCE") or None, env_exists="ENV_EXISTS" in vals)
+
+
+def rsync_args(app_dir: Path, host: str, dest: str) -> list[str]:
+    # Local secrets (.env*) and VCS data never leave the Mac.
+    return ["rsync", "-az", "--delete", "--exclude=.git", "--exclude=.env*",
+            "--exclude=.homelab", "--exclude=node_modules", "--filter=:- .gitignore",
+            f"{app_dir}/", f"{host}:{dest}"]
+
+
+def compose_cmd(m: Manifest, facts: RemoteFacts, app_compose: str | None, args: str) -> str:
+    q = shlex.quote
+    parts = [f"cd {q(f'{facts.home}/apps/{m.name}')} &&",
+             f"docker compose -p app-{m.name} --project-directory ."]
+    if facts.env_exists:
+        parts.append(f"--env-file {q(env_path(m, facts))}")
+    if app_compose:
+        parts.append(f"-f {q(app_compose)}")
+    parts.append(f"-f .homelab/compose.json {args}")
+    return " ".join(parts)
+
+
+def env_path(m: Manifest, facts: RemoteFacts) -> str:
+    return f"{facts.home}/.config/homelab/{m.name}.env"
+
+
+HEALTH_SCRIPT = """c=000; for i in $(seq 15); do
+  c=$(curl -s -o /dev/null -w '%{http_code}' -m 3 @URL@)
+  case "$c" in 2??|3??|401) break ;; esac; sleep 2
+done; echo "$c\""""
+
+
+def fail(msg: str) -> int:
+    print(f"homelab-deploy: {msg}", file=sys.stderr)
+    return 1
+
+
+def info(msg: str) -> None:
+    print(f"==> {msg}", flush=True)
+
+
+def deploy(app_dir: Path, host: str, env_file: str, runner: Runner, force: bool = False) -> int:
+    app_dir = app_dir.resolve()
+    try:
+        m = load_manifest(app_dir)
+    except ManifestError as e:
+        return fail(f"homelab.yaml: {e}")
+
+    info(f"Checking {host} for {m.name} ({m.kind}, port {m.port})")
+    facts = remote_facts(runner, host, env_file, m)
+    if not facts.lan_ip:
+        return fail(f"VIG_LAN_IP not set in ~/{env_file} on {host}")
+    conflict = find_port_conflict(m, facts.owners, facts.listening)
+    if conflict:
+        return fail(conflict)
+    source = f"{socket.gethostname()}:{app_dir}"
+    if facts.source and facts.source != source and not force:
+        return fail(f"~/apps/{m.name} was deployed from {facts.source}; "
+                    f"rename this app or use --force to replace it")
+
+    app_compose = next((f for f in COMPOSE_FILES if (app_dir / f).is_file()), None) \
+        if m.kind == "compose" else None
+    with tempfile.TemporaryDirectory() as tmp:
+        stage = Path(tmp) / ".homelab"
+        stage.mkdir()
+        if m.kind == "static":
+            if m.build:
+                info(f"Building: {m.build}")
+                if runner.stream(["sh", "-c", m.build], cwd=app_dir) != 0:
+                    return fail("build command failed")
+            dist = app_dir / m.dist
+            if not (dist / "index.html").is_file():
+                return fail(f"{m.dist}/index.html not found (set dist: in homelab.yaml)")
+            shutil.copytree(dist, stage / "static" / "site", ignore=STAGE_IGNORE)
+            (stage / "static" / "Dockerfile").write_text(static_dockerfile(m))
+        doc = render_compose(m, facts.lan_ip, env_path(m, facts) if facts.env_exists else None)
+        (stage / "compose.json").write_text(json.dumps(doc, indent=2) + "\n")
+        (stage / "source").write_text(source + "\n")
+
+        info(f"Uploading to {host}:~/apps/{m.name}/")
+        runner.run(["ssh", host, f"mkdir -p apps/{m.name}/.homelab"])
+        if m.kind != "static":
+            runner.run(rsync_args(app_dir, host, f"apps/{m.name}/"))
+        runner.run(["rsync", "-az", "--delete", f"{stage}/", f"{host}:apps/{m.name}/.homelab/"])
+
+    res = runner.run(["ssh", host, compose_cmd(m, facts, app_compose, "config --format json")], check=False)
+    if res.returncode != 0:
+        return fail(f"docker compose config failed:\n{res.stderr}")
+    errs = check_rendered(json.loads(res.stdout), m, facts.lan_ip)
+    if errs:
+        return fail("refusing to start:\n  " + "\n  ".join(errs))
+
+    info("Building and starting")
+    if runner.stream(["ssh", host, compose_cmd(m, facts, app_compose, "up -d --build --remove-orphans")]) != 0:
+        return fail("docker compose up failed")
+
+    url = labels(m, facts.lan_ip)["homelab.app.url"]
+    info(f"Waiting for {url}{m.health_path}")
+    code = runner.run(["ssh", host, HEALTH_SCRIPT.replace("@URL@", shlex.quote(url + m.health_path))],
+                      check=False).stdout.strip()
+    if not re.match(r"^(2..|3..|401)$", code):
+        return fail(f"no healthy HTTP answer at {url}{m.health_path} (last status {code or 'none'}); "
+                    f"the app must listen on 0.0.0.0:{m.container_port} inside the container "
+                    f"(logs: homelab-deploy logs {m.name})")
+    print(f"✓ {m.name} → {url}")
+    return 0
+
+
+USAGE = """usage: homelab-deploy [deploy] [DIR] [--force]
+       homelab-deploy ls
+       homelab-deploy logs NAME
+       homelab-deploy down NAME
+
+Deploys the app in DIR (default: current folder, needs homelab.yaml) to the
+home server. Env: HOMELAB_SSH (default mint), HOMELAB_ENV_FILE.
+Guide: docs/deploying-apps.md in the vigilience repo."""
+
+
+def main(argv: list[str], runner: Runner | None = None) -> int:
+    runner = runner or Runner()
+    host = os.environ.get("HOMELAB_SSH", DEFAULT_HOST)
+    env_file = os.environ.get("HOMELAB_ENV_FILE", DEFAULT_ENV_FILE)
+    cmd = argv[0] if argv else "deploy"
+
+    if cmd in ("-h", "--help", "help"):
+        print(USAGE)
+        return 0
+    if cmd == "ls":
+        fmt = '{{.Label "homelab.app.name"}}\t{{.Label "homelab.app.url"}}\t{{.State}}\t{{.Status}}'
+        res = runner.run(["ssh", host, f"docker ps -a --filter label=homelab.app.name --format {shlex.quote(fmt)}"],
+                         check=False)
+        rows = sorted(line.split("\t") for line in res.stdout.splitlines() if line.strip())
+        if not rows:
+            print("no homelab apps deployed")
+        for r in rows:
+            print("  ".join(c.ljust(w) for c, w in zip(r, (20, 28, 10, 0))).rstrip())
+        return res.returncode
+    if cmd in ("logs", "down"):
+        if len(argv) != 2 or not NAME_RE.match(argv[1]):
+            return fail(f"usage: homelab-deploy {cmd} NAME")
+        name = argv[1]
+        if cmd == "logs":
+            return runner.stream(["ssh", host, f"docker compose -p app-{name} logs -f --tail 200"])
+        rc = runner.stream(["ssh", host, f"docker compose -p app-{name} down"])
+        if rc == 0:
+            print(f"{name} stopped and removed; its data volumes are kept")
+        return rc
+
+    rest = argv[1:] if cmd == "deploy" else argv
+    force = "--force" in rest
+    paths = [a for a in rest if a != "--force"]
+    if len(paths) > 1 or any(a.startswith("-") for a in paths):
+        print(USAGE, file=sys.stderr)
+        return 1
+    try:
+        return deploy(Path(paths[0] if paths else "."), host, env_file, runner, force=force)
+    except subprocess.CalledProcessError as e:
+        return fail(f"command failed ({e.returncode}): {' '.join(e.cmd[:3])} ...\n{e.stderr or ''}")
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
