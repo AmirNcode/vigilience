@@ -1,5 +1,5 @@
 # Vigilience dashboard (YAML mode, managed in Git).
-# Views: Overview · Server · Network · Smart Home · Cameras · Security · Activity
+# Views: Overview · Apps · Server · Network · Smart Home · Cameras · Security · Activity
 #
 # Truthfulness rule: every number shown comes from a live sensor. Anything not
 # yet integrated is labelled "Not configured" or "Not available".
@@ -81,11 +81,13 @@ views:
             heading: Quick actions
             icon: mdi:lightning-bolt-outline
             heading_style: subtitle
+            tap_action: {action: navigate, navigation_path: apps}
           - type: markdown
             content: |
               {% set l = states.sensor.vig_quick_links.attributes if states.sensor.vig_quick_links else {} %}
               {% if l.get('immich') %}<a href="{{ l.immich }}" target="_blank"><ha-icon icon="mdi:image-multiple"></ha-icon> Immich</a>{% endif %}{% if l.get('plex') %} &nbsp;·&nbsp; <a href="{{ l.plex }}" target="_blank"><ha-icon icon="mdi:plex"></ha-icon> Plex</a>{% endif %}{% if l.get('router') %} &nbsp;·&nbsp; <a href="{{ l.router }}" target="_blank"><ha-icon icon="mdi:router-wireless"></ha-icon> Router</a>{% endif %}{% if l.get('vpn') %} &nbsp;·&nbsp; <a href="{{ l.vpn }}" target="_blank"><ha-icon icon="mdi:vpn"></ha-icon> VPN</a>{% endif %}
               {% if not l.get('immich') and not l.get('plex') %}Quick links not configured (set VIG_IMMICH_URL / VIG_PLEX_URL in production.env).{% endif %}
+              {% set apps = state_attr('sensor.vig_apps','items') or [] %}{% if apps %}<br>{% for a in apps %}{{ ' &nbsp;·&nbsp; ' if not loop.first else '' }}{{ '🟢' if a.up else '🔴' }} <a href="{{ a.url }}" target="_blank"><ha-icon icon="{{ a.icon }}"></ha-icon> {{ a.name }}</a>{% endfor %}{% endif %}
 
       - type: grid
         cards:
@@ -218,6 +220,38 @@ views:
                 - binary_sensor.vig_ssd_low_space
                 - binary_sensor.vig_media_low_space
                 - binary_sensor.vig_cpu_hot
+
+  # ───────────────────────────── APPS ─────────────────────────────
+  # Self-hosted apps deployed with homelab-deploy (docs/deploying-apps.md),
+  # discovered from container labels. Nothing to edit here per app.
+  - title: Apps
+    path: apps
+    icon: mdi:apps
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Home apps
+            icon: mdi:apps
+          - type: markdown
+            grid_options: {columns: full}
+            content: |
+              {% set items = state_attr('sensor.vig_apps','items') %}
+              {% if items is none %}
+              App data not available (socket proxy not responding).
+              {% elif not items %}
+              No apps deployed yet. See docs/deploying-apps.md in the Vigilience repo.
+              {% else %}
+              | | App | Status | Response |
+              |:-:|:--|:--|--:|
+              {% for a in items -%}
+              | {{ '🟢' if a.up else '🔴' }} | <ha-icon icon="{{ a.icon }}"></ha-icon> **[{{ a.name }}]({{ a.url }})**<br><small>{{ a.url }}</small> | {{ a.status }} | {{ a.ms ~ ' ms' if a.ms is number else '—' }} |
+              {% endfor %}
+              <small>{{ states('sensor.vig_apps') }} of {{ state_attr('sensor.vig_apps','count') }} answering · LAN only · checked every minute</small>
+              {% endif %}
 
   # ───────────────────────────── SERVER ─────────────────────────────
   - title: Server

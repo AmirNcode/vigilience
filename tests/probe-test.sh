@@ -12,5 +12,22 @@ docker run --rm -v "$PWD/config/homeassistant/scripts:/s:ro" --entrypoint sh "$i
   r=$(check "http refused" http http://127.0.0.1:9); echo "$r" | jq -e ".up == false and .code == 0" >/dev/null
   r=$(check "http unset" http "");                   echo "$r" | jq -e ".up == false" >/dev/null
   VIG_IMMICH_URL=http://x:1 r=$(check "links" links); echo "$r" | jq -e ".ok == true" >/dev/null
+  # apps: fake socket proxy (static file) + one live app page.
+  mkdir -p /tmp/px/containers /tmp/site
+  echo hi > /tmp/site/index.html
+  cat > /tmp/px/containers/json <<JSON
+[{"Id":"a1","State":"running","Status":"Up 2 hours","Labels":{"homelab.app.name":"hello","homelab.app.url":"http://127.0.0.1:18080","homelab.app.icon":"mdi:hand-wave","homelab.app.port":"18080","homelab.app.health":"/"}},
+ {"Id":"a2","State":"exited","Status":"Exited (1) 3 minutes ago","Labels":{"homelab.app.name":"dead","homelab.app.url":"http://127.0.0.1:18081","homelab.app.icon":"mdi:skull","homelab.app.port":"18081","homelab.app.health":"/"}},
+ {"Id":"a3","State":"running","Status":"Up 1 day","Labels":{}}]
+JSON
+  python3 -m http.server 18375 -d /tmp/px >/dev/null 2>&1 &
+  python3 -m http.server 18080 -d /tmp/site >/dev/null 2>&1 &
+  sleep 1
+  r=$(VIG_DOCKER_PROXY_PORT=18375 check "apps" apps)
+  echo "$r" | jq -e ".count == 2 and ([.items[].name] == [\"dead\",\"hello\"])" >/dev/null || { echo "FAIL apps list: $r"; exit 1; }
+  echo "$r" | jq -e "(.items[] | select(.name==\"hello\") | .up == true and .icon == \"mdi:hand-wave\" and .url == \"http://127.0.0.1:18080\")" >/dev/null || { echo "FAIL apps hello: $r"; exit 1; }
+  echo "$r" | jq -e "(.items[] | select(.name==\"dead\") | .up == false and .code == 0 and .state == \"exited\")" >/dev/null || { echo "FAIL apps dead: $r"; exit 1; }
+  r=$(VIG_DOCKER_PROXY_PORT=9 check "apps proxy down" apps)
+  echo "$r" | jq -e ".count == null and .items == []" >/dev/null || { echo "FAIL apps proxy down: $r"; exit 1; }
   echo "PASS probe.sh behaves (JSON always, up/down semantics)"
 '

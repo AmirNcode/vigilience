@@ -9,6 +9,7 @@
 #   probe.sh http <url>    -> {"up":bool,"code":int,"ms":float|null}
 #   probe.sh containers    -> {"running":n,"total":n,"items":[...]} via socket proxy
 #   probe.sh links         -> quick-link URLs taken from VIG_*_URL env vars
+#   probe.sh apps          -> {"count":n,"items":[...]} homelab apps (homelab.app.* labels) + HTTP probe
 
 mode="$1"
 target="$2"
@@ -96,6 +97,41 @@ case "$mode" in
       --arg router "${VIG_ROUTER_URL:-}" \
       --arg vpn "${VIG_VPN_URL:-}" \
       '{ok:true, immich:$immich, plex:$plex, router:$router, vpn:$vpn}'
+    ;;
+  apps)
+    # Self-hosted apps deployed with homelab-deploy, discovered from their
+    # homelab.app.* container labels (same allowlisted list call as above),
+    # each probed over HTTP in parallel. Stopped containers count as down.
+    api="http://127.0.0.1:${VIG_DOCKER_PROXY_PORT:-2375}"
+    list=$(curl -sf -m 5 "$api/containers/json?all=1" 2>/dev/null) || {
+      echo '{"count":null,"items":[],"error":"proxy unreachable"}'
+      exit 0
+    }
+    tmp=$(mktemp -d)
+    printf '%s' "$list" | jq -c '.[] | select(.Labels["homelab.app.name"] != null) | {
+        name: .Labels["homelab.app.name"],
+        url: (.Labels["homelab.app.url"] // ""),
+        icon: (.Labels["homelab.app.icon"] // "mdi:application"),
+        health: (.Labels["homelab.app.health"] // "/"),
+        state: .State, status: .Status}' > "$tmp/apps" 2>/dev/null
+    i=0
+    while IFS= read -r app; do
+      i=$((i + 1))
+      printf '%s' "$app" > "$tmp/$i.app"
+      if [ "$(printf '%s' "$app" | jq -r .state)" = running ]; then
+        sh "$0" http "$(printf '%s' "$app" | jq -r '.url + .health')" > "$tmp/$i.probe" &
+      else
+        echo '{"up":false,"code":0,"ms":null}' > "$tmp/$i.probe"
+      fi
+    done < "$tmp/apps"
+    wait
+    n=1
+    while [ "$n" -le "$i" ]; do
+      jq -c -s '.[0] + .[1] | del(.health)' "$tmp/$n.app" "$tmp/$n.probe" > "$tmp/$n.item"
+      n=$((n + 1))
+    done
+    cat "$tmp"/*.item 2>/dev/null | jq -c -s '{count: length, items: sort_by(.name)}'
+    rm -rf "$tmp"
     ;;
   *)
     echo '{"up":false,"error":"unknown mode"}'

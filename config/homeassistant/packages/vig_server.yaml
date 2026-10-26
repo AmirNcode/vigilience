@@ -277,6 +277,20 @@ command_line:
       unit_of_measurement: running
       icon: mdi:docker
 
+  # Self-hosted homelab apps (homelab-deploy), found by container label.
+  # State = number of apps answering HTTP; items carry name/url/icon/up.
+  - sensor:
+      name: Vig Apps
+      unique_id: vig_apps
+      command: "sh /config/vigilience/scripts/probe.sh apps"
+      scan_interval: 60
+      command_timeout: 30
+      availability: "{{ value_json.count is number }}"
+      value_template: "{{ value_json['items'] | selectattr('up') | list | count }}"
+      json_attributes: [count, items]
+      unit_of_measurement: up
+      icon: mdi:apps
+
   # Last successful Vigilience config backup, written by backup-config.sh.
   - sensor:
       name: Vig Config Backup

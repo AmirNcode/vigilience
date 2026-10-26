@@ -93,6 +93,7 @@ template:
             {% if is_state('binary_sensor.vig_cpu_hot', 'on') %}{% set w.i = w.i + ['CPU temperature is above threshold'] %}{% endif %}
             {% if states('sensor.vig_memory_usage') | float(0) >= 90 %}{% set w.i = w.i + ['Memory usage is above 90%'] %}{% endif %}
             {% if states('sensor.vig_internet_latency') | float(0) >= 150 %}{% set w.i = w.i + ['Internet latency is high'] %}{% endif %}
+            {% for a in state_attr('sensor.vig_apps', 'items') or [] %}{% if not a.up %}{% set w.i = w.i + ['App ' ~ a.name ~ ' is down'] %}{% endif %}{% endfor %}
             {{ w.i }}
 
 automation:

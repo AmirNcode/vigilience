@@ -26,7 +26,7 @@ docker run --rm -i -v "$PWD/config/homeassistant:/src:ro" --entrypoint python3 "
 import re, sys, yaml, glob
 dash = yaml.safe_load(open("/src/dashboards/vigilience.yaml"))
 views = [v["path"] for v in dash["views"]]
-assert views == ["overview","server","network","smart-home","cameras","security","activity"], views
+assert views == ["overview","apps","server","network","smart-home","cameras","security","activity"], views
 text = open("/src/dashboards/vigilience.yaml").read()
 refs = set(re.findall(r"\b((?:sensor|binary_sensor|input_number)\.vig_[a-z0-9_]+)", text))
 pk = "".join(open(f).read() for f in glob.glob("/src/packages/*.yaml"))
