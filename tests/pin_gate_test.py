@@ -128,8 +128,19 @@ class GateTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b"Wrong PIN", await self.post_pin(pin))
 
     async def test_open_redirect_blocked(self):
-        out = await self.post_pin(PIN, nxt="//evil.example")
-        self.assertIn(b"Location: /\r\n", out)
+        for nxt in ("//evil.example", "/%09/evil.example", "/%0a/evil.example", "https://evil.example"):
+            out = await self.post_pin(PIN, nxt=nxt)
+            self.assertIn(b"Location: /\r\n", out, nxt)
+
+    async def test_header_injection_blocked(self):
+        out = await self.post_pin(PIN, nxt="/x%0d%0aSet-Cookie:%20evil=1")
+        head = out.split(b"\r\n\r\n", 1)[0]
+        self.assertIn(b"Location: /\r\n", head)
+        self.assertNotIn(b"evil=1", head)
+
+    async def test_next_with_unicode_is_encoded(self):
+        out = await self.post_pin(PIN, nxt="/lovelace/%C3%A9?a=1")
+        self.assertIn(b"Location: /lovelace/%C3%A9?a=1\r\n", out)
 
     async def test_expired_or_forged_cookie_rejected(self):
         old = pin_gate.make_cookie(self.gate.key, 10, now=time.time() - 100)

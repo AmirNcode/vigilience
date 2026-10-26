@@ -26,7 +26,7 @@ import re
 import secrets
 import sys
 import time
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 COOKIE = "vig_pin"
 PIN_PATH = "/__vig_pin"
@@ -194,7 +194,10 @@ def response(status, body=b"", headers=()):
               502: "Bad Gateway"}[status]
     lines = ["HTTP/1.1 %d %s" % (status, reason), "Content-Length: %d" % len(body),
              "Connection: close", "Cache-Control: no-store"]
-    lines += ["%s: %s" % h for h in headers]
+    for name, value in headers:
+        if any(c in value for c in "\r\n\0"):
+            raise ValueError("header value contains control characters")
+        lines.append("%s: %s" % (name, value))
     return ("\r\n".join(lines) + "\r\n\r\n").encode("latin-1") + body
 
 
@@ -239,11 +242,15 @@ def pin_page(next_path, message=""):
 
 
 def safe_next(value):
-    if not value or not value.startswith("/") or value.startswith("//") or "\\" in value:
+    # Control characters would split the Location header, and browsers strip
+    # tabs/newlines (turning "/\t/evil" into "//evil"), so reject them first.
+    if not value or any(ord(c) < 0x21 or ord(c) == 0x7F for c in value):
+        return "/"
+    if not value.startswith("/") or value.startswith("//") or "\\" in value:
         return "/"
     if value.startswith(PIN_PATH):
         return "/"
-    return value
+    return quote(value, safe="/?=&%:@-._~+,;!$'()*#")
 
 
 class Gate:
