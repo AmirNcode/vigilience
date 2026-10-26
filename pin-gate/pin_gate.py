@@ -177,11 +177,18 @@ def safe_path(path):
     return not any(s in (".", "..") for s in decoded.split("/")) and "\x00" not in decoded
 
 
+def valid_websocket_key(value):
+    try:
+        return len(base64.b64decode(value or "", validate=True)) == 16
+    except ValueError:
+        return False
+
+
 def is_websocket_handshake(req):
     return (
         req.method == "GET"
         and (req.header("upgrade") or "").lower() == "websocket"
-        and req.header("sec-websocket-key")
+        and valid_websocket_key(req.header("sec-websocket-key"))
         and req.header("sec-websocket-version") == "13"
         and req.header("content-length") is None
         and req.header("transfer-encoding") is None
@@ -426,6 +433,23 @@ class Gate:
                 pass
 
         if upgrade:
+            # Nothing from the client is forwarded until Home Assistant has
+            # accepted the upgrade; if it refuses and keeps the connection
+            # alive, buffered client bytes would otherwise be parsed as a
+            # second, unchecked HTTP request.
+            try:
+                await up_writer.drain()
+                up_head = await asyncio.wait_for(up_reader.readuntil(b"\r\n\r\n"), 30)
+            except (asyncio.IncompleteReadError, asyncio.LimitOverrunError,
+                    asyncio.TimeoutError, ConnectionError):
+                up_writer.close()
+                writer.write(response(502, b"Home Assistant did not answer\n", (("Content-Type", "text/plain"),)))
+                return
+            if up_head.split(b" ", 2)[1:2] != [b"101"]:
+                up_writer.close()
+                writer.write(response(400, b"websocket upgrade refused\n", (("Content-Type", "text/plain"),)))
+                return
+            writer.write(up_head)
             to_up = asyncio.ensure_future(pipe(reader, up_writer))
         else:
             to_up = asyncio.ensure_future(body(reader, up_writer, length))

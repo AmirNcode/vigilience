@@ -28,7 +28,16 @@ def free_port():
 async def fake_upstream(reader, writer):
     """Echo the request head; speak a trivial websocket echo after a 101."""
     head = await reader.readuntil(b"\r\n\r\n")
-    if b"Upgrade: websocket" in head:
+    if b"Upgrade: websocket" in head and b"refuse" in head:
+        # Refuse the handshake but keep the connection alive, answering any
+        # request that follows: a gate that pipes early would leak it.
+        writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+        try:
+            await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 1)
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nLEAKED")
+        except (asyncio.TimeoutError, asyncio.IncompleteReadError):
+            pass
+    elif b"Upgrade: websocket" in head:
         writer.write(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
         while data := await reader.read(1024):
             writer.write(b"echo:" + data)
@@ -177,6 +186,22 @@ class GateTest(unittest.IsolatedAsyncioTestCase):
         out = await self.raw((ws % "/api/states").encode(), read_after=b"hello")
         self.assertNotIn(b"101 Switching", out)
         self.assertNotIn(b"echo:", out)
+
+    async def test_refused_upgrade_does_not_forward_client_bytes(self):
+        ws = (b"GET /api/websocket?refuse HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+              b"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+              b"GET /auth/authorize HTTP/1.1\r\nHost: x\r\n\r\n")
+        out = await self.raw(ws)
+        self.assertIn(b" 400 ", out.split(b"\r\n")[0])
+        self.assertNotIn(b"LEAKED", out)
+
+    async def test_malformed_websocket_key_not_upgraded(self):
+        for key in ("x", "aGVsbG8=", "!!!!!!!!!!!!!!!!!!!!!!=="):
+            out = await self.raw(("GET /api/websocket HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n"
+                                  "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n" % key).encode(),
+                                 read_after=b"hello")
+            self.assertNotIn(b"101 Switching", out, key)
+            self.assertNotIn(b"echo:", out, key)
 
     async def test_service_worker_blocked(self):
         self.assertIn(b" 404 ", (await self.get("/sw-modern.js")).split(b"\r\n")[0])
