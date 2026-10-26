@@ -35,7 +35,7 @@ case "$mode" in
       echo '{"up":false,"code":0,"ms":null,"error":"not configured"}'
       exit 0
     fi
-    res=$(curl -s -o /dev/null -m 6 -w '%{http_code} %{time_total}' "$target" 2>/dev/null)
+    res=$(curl -s -o /dev/null -m 6 --proto =http,https -w '%{http_code} %{time_total}' -- "$target" 2>/dev/null)
     code=${res%% *}
     secs=${res##* }
     case "$code" in
@@ -102,13 +102,19 @@ case "$mode" in
     # Self-hosted apps deployed with homelab-deploy, discovered from their
     # homelab.app.* container labels (same allowlisted list call as above),
     # each probed over HTTP in parallel. Stopped containers count as down.
+    # Labels are rendered as HTML links on the dashboard, so only containers
+    # whose labels match the homelab-deploy formats are listed.
     api="http://127.0.0.1:${VIG_DOCKER_PROXY_PORT:-2375}"
     list=$(curl -sf -m 5 "$api/containers/json?all=1" 2>/dev/null) || {
       echo '{"count":null,"items":[],"error":"proxy unreachable"}'
       exit 0
     }
     tmp=$(mktemp -d)
-    printf '%s' "$list" | jq -c '.[] | select(.Labels["homelab.app.name"] != null) | {
+    printf '%s' "$list" | jq -c '.[] | select(
+          (.Labels["homelab.app.name"] // "" | test("^[a-z][a-z0-9-]{0,29}$"))
+          and (.Labels["homelab.app.url"] // "" | test("^http://[A-Za-z0-9.-]+:[0-9]{1,5}$"))
+          and (.Labels["homelab.app.icon"] // "mdi:application" | test("^mdi:[a-z0-9-]+$"))
+          and (.Labels["homelab.app.health"] // "/" | test("^/[A-Za-z0-9._~/-]*$"))) | {
         name: .Labels["homelab.app.name"],
         url: (.Labels["homelab.app.url"] // ""),
         icon: (.Labels["homelab.app.icon"] // "mdi:application"),

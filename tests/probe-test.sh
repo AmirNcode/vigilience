@@ -18,7 +18,9 @@ docker run --rm -v "$PWD/config/homeassistant/scripts:/s:ro" --entrypoint sh "$i
   cat > /tmp/px/containers/json <<JSON
 [{"Id":"a1","State":"running","Status":"Up 2 hours","Labels":{"homelab.app.name":"hello","homelab.app.url":"http://127.0.0.1:18080","homelab.app.icon":"mdi:hand-wave","homelab.app.port":"18080","homelab.app.health":"/"}},
  {"Id":"a2","State":"exited","Status":"Exited (1) 3 minutes ago","Labels":{"homelab.app.name":"dead","homelab.app.url":"http://127.0.0.1:18081","homelab.app.icon":"mdi:skull","homelab.app.port":"18081","homelab.app.health":"/"}},
- {"Id":"a3","State":"running","Status":"Up 1 day","Labels":{}}]
+ {"Id":"a3","State":"running","Status":"Up 1 day","Labels":{}},
+ {"Id":"a4","State":"running","Status":"Up 1 day","Labels":{"homelab.app.name":"evil","homelab.app.url":"javascript:alert(1)","homelab.app.icon":"x\" onmouseover=\"y","homelab.app.health":"/"}},
+ {"Id":"a5","State":"running","Status":"Up 1 day","Labels":{"homelab.app.name":"<b>x</b>","homelab.app.url":"http://127.0.0.1:18080","homelab.app.health":"/"}}]
 JSON
   python3 -m http.server 18375 -d /tmp/px >/dev/null 2>&1 &
   python3 -m http.server 18080 -d /tmp/site >/dev/null 2>&1 &
