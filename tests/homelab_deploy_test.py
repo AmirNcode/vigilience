@@ -128,6 +128,8 @@ class LoadManifest(unittest.TestCase):
         self.assertInvalid(DOCKER + "icon: notebook\n")
         self.assertInvalid(DOCKER + "memory: lots\n")
         self.assertInvalid(DOCKER + "health_path: healthz\n")
+        self.assertInvalid(DOCKER + "health_path: /h?x=1\n")
+        self.assertEqual(self.load(DOCKER + "health_path: /api/v1/health\n", ["Dockerfile"]).health_path, "/api/v1/health")
 
     def test_missing_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:

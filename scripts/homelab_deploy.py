@@ -139,8 +139,9 @@ def load_manifest(app_dir: Path) -> Manifest:
     if not re.match(r"^mdi:[a-z0-9-]+$", icon):
         raise ManifestError("icon must look like mdi:notebook")
     health_path = raw.get("health_path", "/")
-    if not health_path.startswith("/"):
-        raise ManifestError("health_path must start with /")
+    # Same rule as probe.sh apps, which skips labels it can't trust.
+    if not re.match(r"^/[A-Za-z0-9._~/-]*$", health_path):
+        raise ManifestError("health_path must be a plain path like /health (no query string)")
     memory = raw.get("memory", "512m")
     if not re.match(r"^[0-9]+[mg]$", memory):
         raise ManifestError("memory must look like 512m or 1g")

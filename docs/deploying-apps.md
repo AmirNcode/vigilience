@@ -29,7 +29,7 @@ Vigilience Home Assistant dashboard (**Apps** view, and a link row on
    | `kind` | no | `docker` (has a `Dockerfile`), `compose` (has `compose.yaml`), `static` (built site). Inferred from the files present; `static` must be set explicitly |
    | `container_port` | docker, compose | port the app listens on inside its container |
    | `icon` | no | Material Design icon for the dashboard, e.g. `mdi:notebook` (default `mdi:application`) |
-   | `health_path` | no | path that answers 2xx/3xx/401 when healthy (default `/`) |
+   | `health_path` | no | plain path (no query string) that answers 2xx/3xx/401 when healthy (default `/`) |
    | `memory` | no | memory limit, e.g. `256m`, `1g` (default `512m`) |
    | `data` | docker only | absolute path in the container to persist in a named volume, e.g. `/app/data` |
    | `build` | static only | command run on the Mac before upload, e.g. `npm run build` |
